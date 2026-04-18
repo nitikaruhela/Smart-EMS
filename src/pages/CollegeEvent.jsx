@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import EventCard from "../components/EventCard";
 import QrScanner from "../components/QrScanner";
@@ -31,6 +31,20 @@ const hasCoordinates = (event) =>
   Number.isFinite(Number.parseFloat(event.latitude)) &&
   Number.isFinite(Number.parseFloat(event.longitude));
 
+const getRegistrationIdFromQrPayload = (rawPayload) => {
+  const payload = JSON.parse(rawPayload);
+
+  if (payload?.registrationId) {
+    return payload.registrationId;
+  }
+
+  if (payload?.r) {
+    return payload.r;
+  }
+
+  throw new Error("Invalid QR code. Registration ID is missing.");
+};
+
 export default function CollegeEvent({ createMode = false }) {
   const { user, role, isFirebaseConfigured } = useAuth();
   const location = useLocation();
@@ -46,6 +60,7 @@ export default function CollegeEvent({ createMode = false }) {
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const refreshedQrRegistrationIdRef = useRef("");
 
   useEffect(() => {
     if (!user) {
@@ -110,6 +125,52 @@ export default function CollegeEvent({ createMode = false }) {
       setActiveQr(matchedRegistration);
     }
   }, [location.state, myRegistrations]);
+
+  useEffect(() => {
+    if (
+      role !== "Attendee" ||
+      !isFirebaseConfigured ||
+      !activeQr?.id ||
+      !activeQr.attendeeId ||
+      refreshedQrRegistrationIdRef.current === activeQr.id
+    ) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const refreshQrCode = async () => {
+      try {
+        const refreshedQrCode = await generateRegistrationQrCode({
+          registrationId: activeQr.id,
+          attendeeId: activeQr.attendeeId,
+          eventId: activeQr.eventId,
+        });
+
+        refreshedQrRegistrationIdRef.current = activeQr.id;
+
+        if (activeQr.qrCode !== refreshedQrCode) {
+          await updateRegistrationQr(activeQr.id, refreshedQrCode);
+        }
+
+        if (isMounted) {
+          setActiveQr((current) =>
+            current?.id === activeQr.id ? { ...current, qrCode: refreshedQrCode } : current
+          );
+        }
+      } catch (refreshError) {
+        if (isMounted) {
+          setError(refreshError.message || "Unable to refresh the QR code.");
+        }
+      }
+    };
+
+    refreshQrCode();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeQr, isFirebaseConfigured, role]);
 
   const registrationMap = useMemo(() => {
     return myRegistrations.reduce((accumulator, registration) => {
@@ -210,8 +271,8 @@ export default function CollegeEvent({ createMode = false }) {
     setFeedback("");
 
     try {
-      const payload = JSON.parse(scanResult.text);
-      const registration = await getRegistrationById(payload.registrationId);
+      const registrationId = getRegistrationIdFromQrPayload(scanResult.text);
+      const registration = await getRegistrationById(registrationId);
       await markRegistrationCheckedIn(registration.id);
       setFeedback(`${registration.name} checked in successfully.`);
     } catch (scanError) {
@@ -451,7 +512,12 @@ export default function CollegeEvent({ createMode = false }) {
               {activeQr ? (
                 <div className="mt-6 space-y-4">
                   <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-4">
-                    <img src={activeQr.qrCode} alt="Registration QR Code" className="w-full" />
+                    <img
+                      src={activeQr.qrCode}
+                      alt="Registration QR Code"
+                      className="mx-auto w-full max-w-sm"
+                      style={{ imageRendering: "pixelated" }}
+                    />
                   </div>
                   <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
                     <p className="font-semibold text-slate-800">{activeQr.eventName}</p>

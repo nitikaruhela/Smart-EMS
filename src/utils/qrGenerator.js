@@ -1,14 +1,19 @@
 import QRCode from "qrcode";
 
 export async function generateRegistrationQrCode(payload) {
-  const encodedPayload = JSON.stringify(payload);
+  // Keep the payload compact so camera scanners get larger, clearer QR modules.
+  const encodedPayload = JSON.stringify({
+    r: payload.registrationId,
+    a: payload.attendeeId,
+    e: payload.eventId,
+  });
 
   return QRCode.toDataURL(encodedPayload, {
-    errorCorrectionLevel: "H",
-    margin: 2,
-    width: 320,
+    errorCorrectionLevel: "M",
+    margin: 4,
+    width: 640,
     color: {
-      dark: "#0f172a",
+      dark: "#000000",
       light: "#ffffff",
     },
   });
