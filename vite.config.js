@@ -9,7 +9,7 @@ export default defineConfig({
         manualChunks: {
           firebase: ["firebase/app", "firebase/auth", "firebase/firestore"],
           router: ["react-router-dom"],
-          qr: ["qrcode", "react-qr-reader"],
+          qr: ["qrcode", "@zxing/browser", "@zxing/library"],
         },
       },
     },

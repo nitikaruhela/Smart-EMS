@@ -10,6 +10,10 @@ import {
   subscribeToRegistrationsForEvents,
 } from "../services/eventService";
 
+const hasCoordinates = (event) =>
+  Number.isFinite(Number.parseFloat(event.latitude)) &&
+  Number.isFinite(Number.parseFloat(event.longitude));
+
 export default function Dashboard() {
   const { user, role, isFirebaseConfigured } = useAuth();
   const navigate = useNavigate();
@@ -183,6 +187,15 @@ export default function Dashboard() {
                 Jump into specialized flows for college and cultural events.
               </p>
             </Link>
+            <Link to="/events/map" className="glass-panel p-6">
+              <p className="text-sm uppercase tracking-[0.22em] text-slate-400">Visual View</p>
+              <h2 className="mt-3 font-display text-2xl font-bold text-slate-950">
+                Event Map
+              </h2>
+              <p className="mt-3 text-sm text-slate-500">
+                Explore every mapped event location in one interactive view.
+              </p>
+            </Link>
           </div>
         </div>
       </div>
@@ -210,6 +223,12 @@ export default function Dashboard() {
                   <EventCard
                     key={event.id}
                     event={event}
+                    onViewMap={() =>
+                      navigate("/events/map", {
+                        state: { eventId: event.id },
+                      })
+                    }
+                    mapDisabled={!hasCoordinates(event)}
                     footer={
                       <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
                         Registrations:{" "}
@@ -328,6 +347,12 @@ export default function Dashboard() {
               <EventCard
                 key={event.id}
                 event={event}
+                onViewMap={() =>
+                  navigate("/events/map", {
+                    state: { eventId: event.id },
+                  })
+                }
+                mapDisabled={!hasCoordinates(event)}
                 actionLabel={role === "Attendee" ? "Open Registration" : undefined}
                 onAction={() => navigate("/events/college")}
                 actionDisabled={role === "Attendee" && !!registrationMap[event.id]}

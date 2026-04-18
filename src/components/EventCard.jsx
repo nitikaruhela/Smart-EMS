@@ -3,6 +3,9 @@ export default function EventCard({
   actionLabel,
   onAction,
   actionDisabled = false,
+  onViewMap,
+  mapDisabled = false,
+  mapLabel = "View on Map",
   footer,
 }) {
   return (
@@ -36,15 +39,29 @@ export default function EventCard({
 
       <div className="mt-6 space-y-4">
         {footer}
-        {actionLabel ? (
-          <button
-            type="button"
-            onClick={onAction}
-            disabled={actionDisabled}
-            className="btn-primary w-full"
-          >
-            {actionLabel}
-          </button>
+        {actionLabel || onViewMap ? (
+          <div className={`grid gap-3 ${actionLabel && onViewMap ? "sm:grid-cols-2" : ""}`}>
+            {onViewMap ? (
+              <button
+                type="button"
+                onClick={onViewMap}
+                disabled={mapDisabled}
+                className="btn-secondary w-full disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {mapLabel}
+              </button>
+            ) : null}
+            {actionLabel ? (
+              <button
+                type="button"
+                onClick={onAction}
+                disabled={actionDisabled}
+                className="btn-primary w-full"
+              >
+                {actionLabel}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </article>

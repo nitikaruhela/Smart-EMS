@@ -31,3 +31,23 @@
     @apply w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-100;
   }
 }
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+}
+
+.event-marker-selected-wrapper {
+  background: transparent;
+  border: none;
+}
+
+.event-marker-selected {
+  display: inline-block;
+  height: 24px;
+  width: 24px;
+  border-radius: 9999px;
+  border: 3px solid #ffffff;
+  background: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.35);
+}

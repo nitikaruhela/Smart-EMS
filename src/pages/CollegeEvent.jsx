@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { QrReader } from "react-qr-reader";
 import EventCard from "../components/EventCard";
+import QrScanner from "../components/QrScanner";
 import { useAuth } from "../context/AuthContext";
 import {
   createEvent,
@@ -16,11 +16,20 @@ import {
 } from "../services/eventService";
 import { generateRegistrationQrCode } from "../utils/qrGenerator";
 
+const MapPicker = lazy(() => import("../components/MapPicker"));
+const MapModal = lazy(() => import("../components/MapModal"));
+
 const emptyEvent = {
   name: "",
   date: "",
   venue: "",
+  latitude: "",
+  longitude: "",
 };
+
+const hasCoordinates = (event) =>
+  Number.isFinite(Number.parseFloat(event.latitude)) &&
+  Number.isFinite(Number.parseFloat(event.longitude));
 
 export default function CollegeEvent({ createMode = false }) {
   const { user, role, isFirebaseConfigured } = useAuth();
@@ -32,6 +41,8 @@ export default function CollegeEvent({ createMode = false }) {
   const [eventRegistrations, setEventRegistrations] = useState([]);
   const [activeQr, setActiveQr] = useState(null);
   const [scannerEnabled, setScannerEnabled] = useState(false);
+  const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [selectedMapEventId, setSelectedMapEventId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -121,8 +132,17 @@ export default function CollegeEvent({ createMode = false }) {
     setFeedback("");
 
     try {
+      const latitude = Number.parseFloat(eventForm.latitude);
+      const longitude = Number.parseFloat(eventForm.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error("Please provide valid latitude and longitude values.");
+      }
+
       await createEvent({
         ...eventForm,
+        latitude,
+        longitude,
         category: "Campus Experience",
         eventType: "College Event",
         organizerId: user.uid,
@@ -135,6 +155,14 @@ export default function CollegeEvent({ createMode = false }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLocationSelect = (latitude, longitude) => {
+    setEventForm((current) => ({
+      ...current,
+      latitude: latitude.toFixed(6),
+      longitude: longitude.toFixed(6),
+    }));
   };
 
   const handleRegister = async (eventRecord) => {
@@ -194,6 +222,12 @@ export default function CollegeEvent({ createMode = false }) {
   const attendeeRegistrations = myRegistrations.filter((item) =>
     events.some((event) => event.id === item.eventId)
   );
+  const mapEvents = role === "Organizer" ? myEvents : events;
+
+  const openEventMap = (eventRecord) => {
+    setSelectedMapEventId(eventRecord.id);
+    setMapModalOpen(true);
+  };
 
   return (
     <section className="space-y-8">
@@ -262,6 +296,22 @@ export default function CollegeEvent({ createMode = false }) {
                   onChange={handleEventChange}
                   required
                 />
+                <Suspense
+                  fallback={
+                    <div className="rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+                      Loading map picker...
+                    </div>
+                  }
+                >
+                  <MapPicker
+                    onLocationSelect={handleLocationSelect}
+                    initialLocation={
+                      eventForm.latitude && eventForm.longitude
+                        ? [eventForm.latitude, eventForm.longitude]
+                        : null
+                    }
+                  />
+                </Suspense>
                 <button
                   type="submit"
                   className="btn-primary w-full"
@@ -297,12 +347,7 @@ export default function CollegeEvent({ createMode = false }) {
               </p>
               {scannerEnabled ? (
                 <div className="mt-6 overflow-hidden rounded-3xl">
-                  <QrReader
-                    constraints={{ facingMode: "environment" }}
-                    onResult={handleScan}
-                    containerStyle={{ width: "100%" }}
-                    videoStyle={{ width: "100%" }}
-                  />
+                  <QrScanner onResult={handleScan} />
                 </div>
               ) : (
                 <div className="mt-6 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
@@ -327,6 +372,8 @@ export default function CollegeEvent({ createMode = false }) {
                     <EventCard
                       key={event.id}
                       event={event}
+                      onViewMap={() => openEventMap(event)}
+                      mapDisabled={!hasCoordinates(event)}
                       footer={
                         <div className="space-y-3">
                           <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
@@ -365,6 +412,8 @@ export default function CollegeEvent({ createMode = false }) {
                   <EventCard
                     key={event.id}
                     event={event}
+                    onViewMap={() => openEventMap(event)}
+                    mapDisabled={!hasCoordinates(event)}
                     actionLabel={
                       registrationMap[event.id] ? "Already Registered" : "Register Now"
                     }
@@ -465,6 +514,26 @@ export default function CollegeEvent({ createMode = false }) {
           </div>
         </div>
       )}
+
+      {mapModalOpen ? (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+              <div className="glass-panel w-full max-w-xl p-6 text-center text-slate-600">
+                Loading event map...
+              </div>
+            </div>
+          }
+        >
+          <MapModal
+            isOpen={mapModalOpen}
+            onClose={() => setMapModalOpen(false)}
+            events={mapEvents}
+            selectedEventId={selectedMapEventId}
+            title="College Event Locations"
+          />
+        </Suspense>
+      ) : null}
     </section>
   );
 }

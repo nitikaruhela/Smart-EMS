@@ -5,6 +5,7 @@ const navItems = [
   { label: "Dashboard", to: "/dashboard" },
   { label: "Event Types", to: "/events/select" },
   { label: "College Events", to: "/events/college" },
+  { label: "Map View", to: "/events/map" },
   { label: "Cultural Planner", to: "/events/cultural" },
 ];
 
