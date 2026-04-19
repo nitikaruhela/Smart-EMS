@@ -28,16 +28,14 @@ export default function MapModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-      <div className="glass-panel flex h-[85vh] w-full max-w-6xl flex-col p-5">
-        <div className="mb-4 flex items-center justify-between gap-4">
+    <div className="map-modal">
+      <div className="card map-modal__dialog">
+        <div className="map-modal__header">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-600">
-              Event Map
-            </p>
-            <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">{title}</h2>
+            <p className="eyebrow">Event Map</p>
+            <h2 className="section-heading">{title}</h2>
           </div>
-          <button type="button" onClick={onClose} className="btn-secondary px-4 py-2">
+          <button type="button" onClick={onClose} className="button button--secondary">
             Close
           </button>
         </div>
@@ -46,7 +44,7 @@ export default function MapModal({
           events={events}
           selectedEventId={selectedEventId}
           centerEventId={selectedEventId}
-          heightClass="h-full"
+          heightClass="map-height-full"
         />
       </div>
     </div>

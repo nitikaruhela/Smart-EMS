@@ -13,8 +13,57 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db, isFirebaseConfigured } from "../services/firebase";
+import { normalizeUserRole } from "../utils/userRole";
 
 const AuthContext = createContext(null);
+
+async function ensureUserProfileDocument(firebaseUser, fallbackRole = "Attendee") {
+  const userRef = doc(db, "users", firebaseUser.uid);
+  const userSnapshot = await getDoc(userRef);
+  const storedRole = userSnapshot.exists() ? userSnapshot.data().role : null;
+  const normalizedRole = normalizeUserRole(storedRole, fallbackRole);
+
+  if (!normalizedRole) {
+    throw new Error("User role is invalid. Please sign up again and choose a valid role.");
+  }
+
+  const nextUserData = {
+    uid: firebaseUser.uid,
+    email: firebaseUser.email || "",
+    role: normalizedRole,
+  };
+
+  if (!userSnapshot.exists()) {
+    await setDoc(userRef, {
+      ...nextUserData,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    console.info("[Auth] Created missing user profile document.", nextUserData);
+    return nextUserData;
+  }
+
+  const previousData = userSnapshot.data();
+  const needsRepair =
+    previousData.uid !== nextUserData.uid ||
+    previousData.email !== nextUserData.email ||
+    previousData.role !== nextUserData.role;
+
+  if (needsRepair) {
+    await setDoc(
+      userRef,
+      {
+        ...nextUserData,
+        createdAt: previousData.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    console.info("[Auth] Repaired user profile document.", nextUserData);
+  }
+
+  return nextUserData;
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -30,6 +79,7 @@ export function AuthProvider({ children }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+      setAuthError("");
 
       if (!firebaseUser) {
         setRole(null);
@@ -38,10 +88,12 @@ export function AuthProvider({ children }) {
       }
 
       try {
-        const userSnapshot = await getDoc(doc(db, "users", firebaseUser.uid));
-        setRole(userSnapshot.exists() ? userSnapshot.data().role : null);
+        const profile = await ensureUserProfileDocument(firebaseUser);
+        setRole(profile.role);
       } catch (error) {
+        console.error("[Auth] Failed to hydrate auth state.", error);
         setAuthError(error.message);
+        setRole(null);
       } finally {
         setLoading(false);
       }
@@ -57,15 +109,32 @@ export function AuthProvider({ children }) {
       );
     }
 
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    await setDoc(doc(db, "users", credential.user.uid), {
-      uid: credential.user.uid,
-      email,
-      role: selectedRole,
-      createdAt: serverTimestamp(),
-    });
-    setRole(selectedRole);
-    return credential.user;
+    const normalizedRole = normalizeUserRole(selectedRole);
+
+    if (!normalizedRole) {
+      throw new Error("Choose a valid role: Organizer or Attendee.");
+    }
+
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "users", credential.user.uid), {
+        uid: credential.user.uid,
+        email,
+        role: normalizedRole,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      console.info("[Auth] Signup completed.", {
+        uid: credential.user.uid,
+        email,
+        role: normalizedRole,
+      });
+      setRole(normalizedRole);
+      return credential.user;
+    } catch (error) {
+      console.error("[Auth] Signup failed.", error);
+      throw error;
+    }
   };
 
   const login = async ({ email, password }) => {
@@ -75,13 +144,31 @@ export function AuthProvider({ children }) {
       );
     }
 
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-    const userSnapshot = await getDoc(doc(db, "users", credential.user.uid));
-    setRole(userSnapshot.exists() ? userSnapshot.data().role : null);
-    return credential.user;
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      const profile = await ensureUserProfileDocument(credential.user);
+      console.info("[Auth] Login completed.", {
+        uid: credential.user.uid,
+        email: credential.user.email,
+        role: profile.role,
+      });
+      setRole(profile.role);
+      return credential.user;
+    } catch (error) {
+      console.error("[Auth] Login failed.", error);
+      throw error;
+    }
   };
 
-  const logout = () => signOut(auth);
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      console.info("[Auth] Logout completed.");
+    } catch (error) {
+      console.error("[Auth] Logout failed.", error);
+      throw error;
+    }
+  };
 
   const value = useMemo(
     () => ({

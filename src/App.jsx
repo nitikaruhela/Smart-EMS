@@ -15,15 +15,16 @@ const Signup = lazy(() => import("./pages/Signup"));
 
 function AppShell() {
   return (
-    <div className="min-h-screen">
+    <div className="app-shell">
       <Navbar />
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+      <main className="container app-main">
         <AppErrorBoundary>
           <Suspense
             fallback={
-              <div className="glass-panel mt-6 px-8 py-6 text-center">
-                <p className="font-display text-xl font-semibold text-slate-900">
-                  Loading experience...
+              <div className="card empty-state">
+                <p className="empty-state__title">Loading experience...</p>
+                <p className="empty-state__text">
+                  Preparing your workspace and event data.
                 </p>
               </div>
             }
@@ -94,12 +95,15 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="glass-panel px-8 py-6 text-center">
-          <p className="font-display text-xl font-semibold text-slate-900">
-            Loading Smart Event Management...
-          </p>
-        </div>
+      <div className="app-shell">
+        <main className="container app-main">
+          <div className="card empty-state">
+            <p className="empty-state__title">Loading Smart Event Management...</p>
+            <p className="empty-state__text">
+              Syncing your account, permissions, and live event data.
+            </p>
+          </div>
+        </main>
       </div>
     );
   }

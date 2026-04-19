@@ -13,6 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "./firebase";
+import { normalizeUserRole } from "../utils/userRole";
 
 const venueRecommendations = [
   {
@@ -57,6 +58,73 @@ export const eventTypes = [
   "Anniversary",
 ];
 
+function logFirestoreError(scope, error, metadata) {
+  console.error(`[Firestore] ${scope} failed.`, error, metadata || {});
+}
+
+function createFriendlyFirestoreError(error, fallbackMessage) {
+  return new Error(error?.message || fallbackMessage);
+}
+
+function normalizeEventPayload(payload) {
+  return {
+    name: payload.name?.trim() || "",
+    date: payload.date || "",
+    venue: payload.venue?.trim() || "",
+    latitude: Number.parseFloat(payload.latitude),
+    longitude: Number.parseFloat(payload.longitude),
+    category: payload.category?.trim() || "",
+    eventType: payload.eventType?.trim() || "",
+    organizerId: payload.organizerId?.trim() || "",
+    organizerEmail: payload.organizerEmail?.trim() || "",
+    organizerRole: normalizeUserRole(payload.organizerRole, "Organizer"),
+  };
+}
+
+function normalizeRegistrationPayload(payload) {
+  return {
+    name: payload.name?.trim() || "",
+    email: payload.email?.trim() || "",
+    attendeeId: payload.attendeeId?.trim() || "",
+    attendeeRole: normalizeUserRole(payload.attendeeRole, "Attendee"),
+    eventId: payload.eventId?.trim() || "",
+    eventName: payload.eventName?.trim() || "",
+    organizerId: payload.organizerId?.trim() || "",
+  };
+}
+
+function validateEventPayload(payload) {
+  if (!payload.name || !payload.date || !payload.venue) {
+    throw new Error("Event name, date, and venue are required.");
+  }
+
+  if (!Number.isFinite(payload.latitude) || !Number.isFinite(payload.longitude)) {
+    throw new Error("Event location is invalid.");
+  }
+
+  if (!payload.organizerId || !payload.organizerEmail) {
+    throw new Error("Organizer details are missing.");
+  }
+
+  if (payload.organizerRole !== "Organizer") {
+    throw new Error("Only organizer accounts can create events.");
+  }
+}
+
+function validateRegistrationPayload(payload) {
+  if (!payload.name || !payload.email || !payload.attendeeId) {
+    throw new Error("Attendee details are missing.");
+  }
+
+  if (!payload.eventId || !payload.eventName) {
+    throw new Error("Event details are missing.");
+  }
+
+  if (payload.attendeeRole !== "Attendee") {
+    throw new Error("Only attendee accounts can register for events.");
+  }
+}
+
 export function subscribeToEvents(callback, onError) {
   if (!isFirebaseConfigured) {
     callback([]);
@@ -73,7 +141,10 @@ export function subscribeToEvents(callback, onError) {
       }));
       callback(events);
     },
-    onError
+    (error) => {
+      logFirestoreError("subscribeToEvents", error);
+      onError?.(error);
+    }
   );
 }
 
@@ -96,7 +167,10 @@ export function subscribeToEventsByOrganizer(organizerId, callback, onError) {
         .sort((a, b) => new Date(a.date) - new Date(b.date));
       callback(events);
     },
-    onError
+    (error) => {
+      logFirestoreError("subscribeToEventsByOrganizer", error, { organizerId });
+      onError?.(error);
+    }
   );
 }
 
@@ -120,7 +194,10 @@ export function subscribeToRegistrationsByUser(userId, callback, onError) {
       }));
       callback(registrations);
     },
-    onError
+    (error) => {
+      logFirestoreError("subscribeToRegistrationsByUser", error, { userId });
+      onError?.(error);
+    }
   );
 }
 
@@ -144,7 +221,10 @@ export function subscribeToRegistrationsForEvents(eventIds, callback, onError) {
       }));
       callback(registrations);
     },
-    onError
+    (error) => {
+      logFirestoreError("subscribeToRegistrationsForEvents", error, { eventIds });
+      onError?.(error);
+    }
   );
 }
 
@@ -153,10 +233,22 @@ export async function createEvent(payload) {
     throw new Error("Firebase is not configured.");
   }
 
-  return addDoc(collection(db, "events"), {
-    ...payload,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    const normalizedPayload = normalizeEventPayload(payload);
+    validateEventPayload(normalizedPayload);
+
+    return await addDoc(collection(db, "events"), {
+      ...normalizedPayload,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    logFirestoreError("createEvent", error, {
+      organizerId: payload?.organizerId,
+      eventType: payload?.eventType,
+    });
+    throw createFriendlyFirestoreError(error, "Unable to create the event.");
+  }
 }
 
 export async function registerForEvent(payload) {
@@ -164,23 +256,35 @@ export async function registerForEvent(payload) {
     throw new Error("Firebase is not configured.");
   }
 
-  const existingRegistrationQuery = query(
-    collection(db, "registrations"),
-    where("attendeeId", "==", payload.attendeeId),
-    where("eventId", "==", payload.eventId)
-  );
-  const existingRegistration = await getDocs(existingRegistrationQuery);
+  try {
+    const normalizedPayload = normalizeRegistrationPayload(payload);
+    validateRegistrationPayload(normalizedPayload);
 
-  // This keeps the QR pass unique even if the attendee retries from another session.
-  if (!existingRegistration.empty) {
-    throw new Error("You are already registered for this event.");
+    const existingRegistrationQuery = query(
+      collection(db, "registrations"),
+      where("attendeeId", "==", normalizedPayload.attendeeId),
+      where("eventId", "==", normalizedPayload.eventId)
+    );
+    const existingRegistration = await getDocs(existingRegistrationQuery);
+
+    // This keeps the QR pass unique even if the attendee retries from another session.
+    if (!existingRegistration.empty) {
+      throw new Error("You are already registered for this event.");
+    }
+
+    return await addDoc(collection(db, "registrations"), {
+      ...normalizedPayload,
+      checkedIn: false,
+      registeredAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    logFirestoreError("registerForEvent", error, {
+      attendeeId: payload?.attendeeId,
+      eventId: payload?.eventId,
+    });
+    throw createFriendlyFirestoreError(error, "Unable to register for this event.");
   }
-
-  return addDoc(collection(db, "registrations"), {
-    ...payload,
-    checkedIn: false,
-    registeredAt: serverTimestamp(),
-  });
 }
 
 export async function markRegistrationCheckedIn(registrationId) {
@@ -190,25 +294,31 @@ export async function markRegistrationCheckedIn(registrationId) {
 
   const registrationRef = doc(db, "registrations", registrationId);
 
-  return runTransaction(db, async (transaction) => {
-    const registrationSnapshot = await transaction.get(registrationRef);
+  try {
+    return await runTransaction(db, async (transaction) => {
+      const registrationSnapshot = await transaction.get(registrationRef);
 
-    if (!registrationSnapshot.exists()) {
-      throw new Error("Registration not found.");
-    }
+      if (!registrationSnapshot.exists()) {
+        throw new Error("Registration not found.");
+      }
 
-    const registration = registrationSnapshot.data();
+      const registration = registrationSnapshot.data();
 
-    // Transactions ensure two scanners cannot check in the same attendee twice.
-    if (registration.checkedIn) {
-      throw new Error("This attendee has already checked in.");
-    }
+      // Transactions ensure two scanners cannot check in the same attendee twice.
+      if (registration.checkedIn) {
+        throw new Error("This attendee has already checked in.");
+      }
 
-    transaction.update(registrationRef, {
-      checkedIn: true,
-      checkedInAt: serverTimestamp(),
+      transaction.update(registrationRef, {
+        checkedIn: true,
+        checkedInAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     });
-  });
+  } catch (error) {
+    logFirestoreError("markRegistrationCheckedIn", error, { registrationId });
+    throw createFriendlyFirestoreError(error, "Unable to check in this registration.");
+  }
 }
 
 export async function updateRegistrationQr(registrationId, qrCode) {
@@ -216,7 +326,15 @@ export async function updateRegistrationQr(registrationId, qrCode) {
     throw new Error("Firebase is not configured.");
   }
 
-  return updateDoc(doc(db, "registrations", registrationId), { qrCode });
+  try {
+    return await updateDoc(doc(db, "registrations", registrationId), {
+      qrCode,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    logFirestoreError("updateRegistrationQr", error, { registrationId });
+    throw createFriendlyFirestoreError(error, "Unable to update the registration QR code.");
+  }
 }
 
 export async function getRegistrationById(registrationId) {
@@ -224,13 +342,18 @@ export async function getRegistrationById(registrationId) {
     throw new Error("Firebase is not configured.");
   }
 
-  const snapshot = await getDoc(doc(db, "registrations", registrationId));
+  try {
+    const snapshot = await getDoc(doc(db, "registrations", registrationId));
 
-  if (!snapshot.exists()) {
-    throw new Error("Registration not found.");
+    if (!snapshot.exists()) {
+      throw new Error("Registration not found.");
+    }
+
+    return { id: snapshot.id, ...snapshot.data() };
+  } catch (error) {
+    logFirestoreError("getRegistrationById", error, { registrationId });
+    throw createFriendlyFirestoreError(error, "Unable to fetch the registration.");
   }
-
-  return { id: snapshot.id, ...snapshot.data() };
 }
 
 export function getVenueRecommendations({ location, attendees, budget }) {

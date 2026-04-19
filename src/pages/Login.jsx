@@ -38,41 +38,37 @@ export default function Login() {
   };
 
   return (
-    <section className="grid min-h-[calc(100vh-8rem)] items-center gap-8 lg:grid-cols-[1.2fr,0.8fr]">
-      <div className="space-y-6">
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-brand-600">
-          Event Operations Platform
-        </p>
-        <h1 className="max-w-2xl font-display text-5xl font-bold leading-tight text-slate-950">
-          Build, launch, and track smarter events from one dashboard.
-        </h1>
-        <p className="max-w-xl text-lg text-slate-600">
+    <section className="section auth-page split-layout">
+      <div className="section">
+        <p className="eyebrow">Event Operations Platform</p>
+        <h1 className="page-title">Build, launch, and track smarter events from one dashboard.</h1>
+        <p className="page-subtitle">
           Manage college events, venue recommendations, registrations, and QR-based
           check-ins with a streamlined role-based experience.
         </p>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="feature-grid">
           {[
             ["Live Analytics", "See registrations and check-ins update in real time."],
             ["Role-Based Access", "Organizers and attendees see only what they need."],
             ["Mobile Ready", "Responsive workflows for browsing, joining, and scanning."],
           ].map(([title, detail]) => (
-            <div key={title} className="glass-panel p-5">
-              <p className="font-display text-lg font-semibold text-slate-900">{title}</p>
-              <p className="mt-2 text-sm text-slate-500">{detail}</p>
+            <div key={title} className="card feature-card">
+              <p className="feature-card__title">{title}</p>
+              <p className="helper-text">{detail}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="glass-panel p-8">
-        <div className="space-y-2 text-center">
-          <h2 className="font-display text-3xl font-bold text-slate-950">Welcome back</h2>
-          <p className="text-slate-500">Log in to continue managing your event flows.</p>
+      <div className="card">
+        <div className="auth-form__header">
+          <h2 className="auth-form__title">Welcome back</h2>
+          <p className="auth-form__caption">Log in to continue managing your event flows.</p>
         </div>
 
-        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit}>
           <input
-            className="input-field"
+            className="input"
             type="email"
             name="email"
             placeholder="Email address"
@@ -81,7 +77,7 @@ export default function Login() {
             required
           />
           <input
-            className="input-field"
+            className="input"
             type="password"
             name="password"
             placeholder="Password"
@@ -90,24 +86,22 @@ export default function Login() {
             required
           />
           {!isFirebaseConfigured ? (
-            <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <p className="alert alert--warning">
               Add Firebase keys to `.env` using `.env.example` before authentication can
               work.
             </p>
           ) : null}
           {error || authError ? (
-            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
-              {error || authError}
-            </p>
+            <p className="alert alert--danger">{error || authError}</p>
           ) : null}
-          <button type="submit" className="btn-primary w-full" disabled={loading}>
+          <button type="submit" className="button button--primary" disabled={loading}>
             {loading ? "Signing in..." : "Login"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        <p className="auth-form__footer">
           New here?{" "}
-          <Link to="/signup" className="font-semibold text-brand-700">
+          <Link to="/signup" className="text-link">
             Create an account
           </Link>
         </p>

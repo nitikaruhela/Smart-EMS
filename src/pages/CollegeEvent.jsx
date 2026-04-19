@@ -15,6 +15,7 @@ import {
   updateRegistrationQr,
 } from "../services/eventService";
 import { generateRegistrationQrCode } from "../utils/qrGenerator";
+import { normalizeUserRole } from "../utils/userRole";
 
 const MapPicker = lazy(() => import("../components/MapPicker"));
 const MapModal = lazy(() => import("../components/MapModal"));
@@ -61,6 +62,7 @@ export default function CollegeEvent({ createMode = false }) {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const refreshedQrRegistrationIdRef = useRef("");
+  const normalizedRole = normalizeUserRole(role);
 
   useEffect(() => {
     if (!user) {
@@ -75,7 +77,7 @@ export default function CollegeEvent({ createMode = false }) {
       ),
     ];
 
-    if (role === "Organizer") {
+    if (normalizedRole === "Organizer") {
       unsubscribers.push(
         subscribeToEventsByOrganizer(
           user.uid,
@@ -88,7 +90,7 @@ export default function CollegeEvent({ createMode = false }) {
       );
     }
 
-    if (role === "Attendee") {
+    if (normalizedRole === "Attendee") {
       unsubscribers.push(
         subscribeToRegistrationsByUser(user.uid, setMyRegistrations, (snapshotError) =>
           setError(snapshotError.message)
@@ -97,10 +99,10 @@ export default function CollegeEvent({ createMode = false }) {
     }
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
-  }, [role, user]);
+  }, [normalizedRole, user]);
 
   useEffect(() => {
-    if (role !== "Organizer" || !myEvents.length) {
+    if (normalizedRole !== "Organizer" || !myEvents.length) {
       setEventRegistrations([]);
       return undefined;
     }
@@ -110,7 +112,7 @@ export default function CollegeEvent({ createMode = false }) {
       setEventRegistrations,
       (snapshotError) => setError(snapshotError.message)
     );
-  }, [myEvents, role]);
+  }, [myEvents, normalizedRole]);
 
   useEffect(() => {
     if (!location.state?.registrationId) {
@@ -128,7 +130,7 @@ export default function CollegeEvent({ createMode = false }) {
 
   useEffect(() => {
     if (
-      role !== "Attendee" ||
+      normalizedRole !== "Attendee" ||
       !isFirebaseConfigured ||
       !activeQr?.id ||
       !activeQr.attendeeId ||
@@ -170,7 +172,7 @@ export default function CollegeEvent({ createMode = false }) {
     return () => {
       isMounted = false;
     };
-  }, [activeQr, isFirebaseConfigured, role]);
+  }, [activeQr, isFirebaseConfigured, normalizedRole]);
 
   const registrationMap = useMemo(() => {
     return myRegistrations.reduce((accumulator, registration) => {
@@ -193,6 +195,14 @@ export default function CollegeEvent({ createMode = false }) {
     setFeedback("");
 
     try {
+      if (!user?.uid) {
+        throw new Error("You must be logged in to create an event.");
+      }
+
+      if (normalizedRole !== "Organizer") {
+        throw new Error("Only organizer accounts can create events.");
+      }
+
       const latitude = Number.parseFloat(eventForm.latitude);
       const longitude = Number.parseFloat(eventForm.longitude);
 
@@ -208,10 +218,12 @@ export default function CollegeEvent({ createMode = false }) {
         eventType: "College Event",
         organizerId: user.uid,
         organizerEmail: user.email,
+        organizerRole: normalizedRole,
       });
       setEventForm(emptyEvent);
       setFeedback("College event created successfully.");
     } catch (submitError) {
+      console.error("[CollegeEvent] Failed to create event.", submitError);
       setError(submitError.message);
     } finally {
       setLoading(false);
@@ -232,12 +244,22 @@ export default function CollegeEvent({ createMode = false }) {
     setFeedback("");
 
     try {
+      if (!user?.uid || !user?.email) {
+        throw new Error("You must be logged in to register for an event.");
+      }
+
+      if (normalizedRole !== "Attendee") {
+        throw new Error("Only attendee accounts can register for events.");
+      }
+
       const registrationPayload = {
         name: user.email.split("@")[0],
         email: user.email,
         attendeeId: user.uid,
+        attendeeRole: normalizedRole,
         eventId: eventRecord.id,
         eventName: eventRecord.name,
+        organizerId: eventRecord.organizerId || "",
       };
 
       const registrationRef = await registerForEvent(registrationPayload);
@@ -255,6 +277,7 @@ export default function CollegeEvent({ createMode = false }) {
       });
       setFeedback("Registration completed. Your QR pass is ready.");
     } catch (submitError) {
+      console.error("[CollegeEvent] Failed to register for event.", submitError);
       setError(submitError.message);
     } finally {
       setLoading(false);
@@ -276,6 +299,7 @@ export default function CollegeEvent({ createMode = false }) {
       await markRegistrationCheckedIn(registration.id);
       setFeedback(`${registration.name} checked in successfully.`);
     } catch (scanError) {
+      console.error("[CollegeEvent] Failed to process QR scan.", scanError);
       setError(scanError.message || "Unable to process QR code.");
     }
   };
@@ -283,7 +307,7 @@ export default function CollegeEvent({ createMode = false }) {
   const attendeeRegistrations = myRegistrations.filter((item) =>
     events.some((event) => event.id === item.eventId)
   );
-  const mapEvents = role === "Organizer" ? myEvents : events;
+  const mapEvents = normalizedRole === "Organizer" ? myEvents : events;
 
   const openEventMap = (eventRecord) => {
     setSelectedMapEventId(eventRecord.id);
@@ -291,50 +315,40 @@ export default function CollegeEvent({ createMode = false }) {
   };
 
   return (
-    <section className="space-y-8">
-      <div className="max-w-3xl space-y-4">
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-brand-600">
-          College Event Module
-        </p>
-        <h1 className="font-display text-4xl font-bold text-slate-950">
-          {role === "Organizer"
+    <section className="page">
+      <div className="section">
+        <p className="eyebrow">College Event Module</p>
+        <h1 className="page-title">
+          {normalizedRole === "Organizer"
             ? "Create, manage, and verify college event attendance."
             : "Reserve your spot and keep your campus event pass ready."}
         </h1>
-        <p className="text-lg text-slate-600">
+        <p className="page-subtitle">
           This workflow handles Firestore event storage, attendee registration, QR pass
           generation, and duplicate-safe check-ins.
         </p>
-        {feedback ? (
-          <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {feedback}
-          </p>
-        ) : null}
-        {error ? (
-          <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</p>
-        ) : null}
+        {feedback ? <p className="alert alert--success">{feedback}</p> : null}
+        {error ? <p className="alert alert--danger">{error}</p> : null}
         {!isFirebaseConfigured ? (
-          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <p className="alert alert--warning">
             Add Firebase configuration in `.env` to activate event creation, registration,
             and check-in persistence.
           </p>
         ) : null}
       </div>
 
-      {role === "Organizer" ? (
-        <div className="grid gap-8 xl:grid-cols-[0.9fr,1.1fr]">
-          <div className="space-y-6">
-            <div className="glass-panel p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-slate-400">
-                Organizer Tools
-              </p>
-              <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">
+      {normalizedRole === "Organizer" ? (
+        <div className="planner-layout">
+          <div className="section">
+            <div className="card section">
+              <p className="card-kicker">Organizer Tools</p>
+              <h2 className="section-heading">
                 {createMode ? "Create College Event" : "New College Event"}
               </h2>
 
-              <form className="mt-6 space-y-4" onSubmit={handleCreateEvent}>
+              <form className="auth-form" onSubmit={handleCreateEvent}>
                 <input
-                  className="input-field"
+                  className="input"
                   name="name"
                   placeholder="Event name"
                   value={eventForm.name}
@@ -342,7 +356,7 @@ export default function CollegeEvent({ createMode = false }) {
                   required
                 />
                 <input
-                  className="input-field"
+                  className="input"
                   name="date"
                   type="date"
                   value={eventForm.date}
@@ -350,7 +364,7 @@ export default function CollegeEvent({ createMode = false }) {
                   required
                 />
                 <input
-                  className="input-field"
+                  className="input"
                   name="venue"
                   placeholder="Venue"
                   value={eventForm.venue}
@@ -359,8 +373,8 @@ export default function CollegeEvent({ createMode = false }) {
                 />
                 <Suspense
                   fallback={
-                    <div className="rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-                      Loading map picker...
+                    <div className="card empty-state">
+                      <p className="empty-state__title">Loading map picker...</p>
                     </div>
                   }
                 >
@@ -375,7 +389,7 @@ export default function CollegeEvent({ createMode = false }) {
                 </Suspense>
                 <button
                   type="submit"
-                  className="btn-primary w-full"
+                  className="button button--primary"
                   disabled={loading || !isFirebaseConfigured}
                 >
                   {loading ? "Saving..." : "Create Event"}
@@ -383,47 +397,42 @@ export default function CollegeEvent({ createMode = false }) {
               </form>
             </div>
 
-            <div className="glass-panel p-6">
-              <div className="flex items-center justify-between gap-4">
+            <div className="card section">
+              <div className="section-header">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.22em] text-slate-400">
-                    QR Entry System
-                  </p>
-                  <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">
-                    Live Check-In Scanner
-                  </h2>
+                  <p className="card-kicker">QR Entry System</p>
+                  <h2 className="section-heading">Live Check-In Scanner</h2>
                 </div>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="button button--secondary"
                   onClick={() => setScannerEnabled((current) => !current)}
                   disabled={!isFirebaseConfigured}
                 >
                   {scannerEnabled ? "Stop Scanner" : "Start Scanner"}
                 </button>
               </div>
-              <p className="mt-3 text-sm text-slate-500">
+              <p className="helper-text">
                 Each QR payload carries a registration ID. Firestore transactions prevent
                 duplicate check-ins automatically.
               </p>
               {scannerEnabled ? (
-                <div className="mt-6 overflow-hidden rounded-3xl">
-                  <QrScanner onResult={handleScan} />
-                </div>
+                <QrScanner onResult={handleScan} />
               ) : (
-                <div className="mt-6 rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-                  Enable the scanner to validate attendee entry at the venue gate.
+                <div className="card empty-state">
+                  <p className="empty-state__title">Scanner is paused.</p>
+                  <p className="empty-state__text">
+                    Enable the scanner to validate attendee entry at the venue gate.
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="space-y-6">
-            <h2 className="font-display text-2xl font-bold text-slate-950">
-              Your College Events
-            </h2>
+          <div className="section">
+            <h2 className="section-heading">Your College Events</h2>
             {myEvents.length ? (
-              <div className="grid gap-6">
+              <div className="card-grid">
                 {myEvents.map((event) => {
                   const registrationsForEvent = eventRegistrations.filter(
                     (registration) => registration.eventId === event.id
@@ -436,17 +445,20 @@ export default function CollegeEvent({ createMode = false }) {
                       onViewMap={() => openEventMap(event)}
                       mapDisabled={!hasCoordinates(event)}
                       footer={
-                        <div className="space-y-3">
-                          <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                            Registrations: {registrationsForEvent.length}
+                        <div className="stat-grid">
+                          <div className="stat-block">
+                            <p className="meta-label">Registrations</p>
+                            <p className="stat-block__value">{registrationsForEvent.length}</p>
                           </div>
-                          <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                            Checked-in:{" "}
-                            {
-                              registrationsForEvent.filter(
-                                (registration) => registration.checkedIn
-                              ).length
-                            }
+                          <div className="stat-block">
+                            <p className="meta-label">Checked In</p>
+                            <p className="stat-block__value">
+                              {
+                                registrationsForEvent.filter(
+                                  (registration) => registration.checkedIn
+                                ).length
+                              }
+                            </p>
                           </div>
                         </div>
                       }
@@ -455,20 +467,21 @@ export default function CollegeEvent({ createMode = false }) {
                 })}
               </div>
             ) : (
-              <div className="glass-panel p-6 text-slate-500">
-                No college events yet. Create your first one to open registrations.
+              <div className="card empty-state">
+                <p className="empty-state__title">No college events yet.</p>
+                <p className="empty-state__text">
+                  Create your first one to open registrations.
+                </p>
               </div>
             )}
           </div>
         </div>
-      ) : (
-        <div className="grid gap-8 xl:grid-cols-[1.1fr,0.9fr]">
-          <div className="space-y-6">
-            <h2 className="font-display text-2xl font-bold text-slate-950">
-              Available College Events
-            </h2>
+      ) : normalizedRole === "Attendee" ? (
+        <div className="planner-layout">
+          <div className="section">
+            <h2 className="section-heading">Available College Events</h2>
             {events.length ? (
-              <div className="grid gap-6 lg:grid-cols-2">
+              <div className="card-grid">
                 {events.map((event) => (
                   <EventCard
                     key={event.id}
@@ -484,11 +497,11 @@ export default function CollegeEvent({ createMode = false }) {
                     onAction={() => handleRegister(event)}
                     footer={
                       registrationMap[event.id] ? (
-                        <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        <div className="soft-panel soft-panel--success">
                           Your pass has already been generated for this event.
                         </div>
                       ) : (
-                        <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        <div className="soft-panel">
                           Join now to generate a personal QR pass for entry.
                         </div>
                       )
@@ -497,73 +510,65 @@ export default function CollegeEvent({ createMode = false }) {
                 ))}
               </div>
             ) : (
-              <div className="glass-panel p-6 text-slate-500">
-                No college events are available yet.
+              <div className="card empty-state">
+                <p className="empty-state__title">No college events are available yet.</p>
               </div>
             )}
           </div>
 
-          <div className="space-y-6">
-            <div className="glass-panel p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-slate-400">QR Pass</p>
-              <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">
+          <div className="section">
+            <div className="card section">
+              <p className="card-kicker">QR Pass</p>
+              <h2 className="section-heading">
                 {activeQr ? "Latest Registration Pass" : "Select an Event to Generate a Pass"}
               </h2>
               {activeQr ? (
-                <div className="mt-6 space-y-4">
-                  <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-4">
+                <div className="section">
+                  <div className="map-frame">
                     <img
                       src={activeQr.qrCode}
                       alt="Registration QR Code"
-                      className="mx-auto w-full max-w-sm"
                       style={{ imageRendering: "pixelated" }}
                     />
                   </div>
-                  <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                    <p className="font-semibold text-slate-800">{activeQr.eventName}</p>
+                  <div className="soft-panel">
+                    <p className="empty-state__title">{activeQr.eventName}</p>
                     <p>{activeQr.email}</p>
                   </div>
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-slate-500">
+                <p className="empty-state__text">
                   Your most recent college event registration will appear here for quick
                   access.
                 </p>
               )}
             </div>
 
-            <div className="glass-panel p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-slate-400">
-                My College Registrations
-              </p>
-              <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">
-                Registration Status
-              </h2>
-              <div className="mt-6 space-y-3">
+            <div className="card section">
+              <p className="card-kicker">My College Registrations</p>
+              <h2 className="section-heading">Registration Status</h2>
+              <div className="nearby-list">
                 {attendeeRegistrations.length ? (
                   attendeeRegistrations.map((registration) => (
-                    <div
-                      key={registration.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-4"
-                    >
-                      <div className="flex items-start justify-between gap-4">
+                    <div key={registration.id} className="card list-card">
+                      <div className="list-card__row">
                         <div>
-                          <p className="font-semibold text-slate-900">{registration.eventName}</p>
-                          <p className="mt-1 text-sm text-slate-500">{registration.email}</p>
+                          <p className="empty-state__title">{registration.eventName}</p>
+                          <p className="helper-text">{registration.email}</p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setActiveQr(registration)}
-                          className="btn-secondary px-4 py-2"
+                          className="button button--secondary"
                         >
                           View QR
                         </button>
                       </div>
                       <p
-                        className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                        className={`status-badge ${
                           registration.checkedIn
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-amber-100 text-amber-700"
+                            ? "status-badge--success"
+                            : "status-badge--warning"
                         }`}
                       >
                         {registration.checkedIn ? "Checked In" : "Pending Check-In"}
@@ -571,7 +576,7 @@ export default function CollegeEvent({ createMode = false }) {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-slate-500">
+                  <p className="empty-state__text">
                     You have not registered for a college event yet.
                   </p>
                 )}
@@ -579,14 +584,21 @@ export default function CollegeEvent({ createMode = false }) {
             </div>
           </div>
         </div>
+      ) : (
+        <div className="card empty-state">
+          <p className="empty-state__title">Your account role is missing or invalid.</p>
+          <p className="empty-state__text">
+            Sign out and sign back in to repair the profile before using event workflows.
+          </p>
+        </div>
       )}
 
       {mapModalOpen ? (
         <Suspense
           fallback={
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-              <div className="glass-panel w-full max-w-xl p-6 text-center text-slate-600">
-                Loading event map...
+            <div className="map-modal">
+              <div className="card modal-loading">
+                <p className="empty-state__title">Loading event map...</p>
               </div>
             </div>
           }

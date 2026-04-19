@@ -42,29 +42,25 @@ export default function Signup() {
   };
 
   return (
-    <section className="mx-auto grid min-h-[calc(100vh-8rem)] max-w-5xl items-center gap-8 lg:grid-cols-[0.9fr,1.1fr]">
-      <div className="space-y-5">
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-brand-600">
-          Smart Access Control
-        </p>
-        <h1 className="font-display text-5xl font-bold leading-tight text-slate-950">
-          Start as an organizer or attendee in one guided signup flow.
-        </h1>
-        <p className="text-lg text-slate-600">
+    <section className="section auth-page split-layout">
+      <div className="section">
+        <p className="eyebrow">Smart Access Control</p>
+        <h1 className="page-title">Start as an organizer or attendee in one guided signup flow.</h1>
+        <p className="page-subtitle">
           Roles are stored in Firestore and power protected routes, dashboard actions,
           and event-specific workflows across the application.
         </p>
       </div>
 
-      <div className="glass-panel p-8">
-        <div className="space-y-2 text-center">
-          <h2 className="font-display text-3xl font-bold text-slate-950">Create account</h2>
-          <p className="text-slate-500">Choose your role to unlock the right workflow.</p>
+      <div className="card">
+        <div className="auth-form__header">
+          <h2 className="auth-form__title">Create account</h2>
+          <p className="auth-form__caption">Choose your role to unlock the right workflow.</p>
         </div>
 
-        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit}>
           <input
-            className="input-field"
+            className="input"
             type="email"
             name="email"
             placeholder="Email address"
@@ -73,7 +69,7 @@ export default function Signup() {
             required
           />
           <input
-            className="input-field"
+            className="input"
             type="password"
             name="password"
             placeholder="Password"
@@ -83,56 +79,52 @@ export default function Signup() {
             required
           />
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="role-options">
             {roles.map((role) => {
               const active = formData.role === role;
 
               return (
                 <label
                   key={role}
-                  className={`cursor-pointer rounded-2xl border p-4 transition ${
-                    active
-                      ? "border-brand-500 bg-brand-50"
-                      : "border-slate-200 bg-white hover:border-brand-200"
-                  }`}
+                  className={`role-card ${active ? "role-card--active" : ""}`}
                 >
                   <input
-                    className="sr-only"
+                    className="visually-hidden"
                     type="radio"
                     name="role"
                     value={role}
                     checked={active}
                     onChange={handleChange}
                   />
-                  <p className="font-display text-lg font-semibold text-slate-950">{role}</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {role === "Organizer"
-                      ? "Create events, review analytics, and run check-ins."
-                      : "Browse, register, and track your event access."}
-                  </p>
+                  <div>
+                    <p className="role-card__title">{role}</p>
+                    <p className="role-card__text">
+                      {role === "Organizer"
+                        ? "Create events, review analytics, and run check-ins."
+                        : "Browse, register, and track your event access."}
+                    </p>
+                  </div>
                 </label>
               );
             })}
           </div>
 
           {!isFirebaseConfigured ? (
-            <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <p className="alert alert--warning">
               Add Firebase keys to `.env` using `.env.example` before authentication can
               work.
             </p>
           ) : null}
-          {error ? (
-            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</p>
-          ) : null}
+          {error ? <p className="alert alert--danger">{error}</p> : null}
 
-          <button type="submit" className="btn-primary w-full" disabled={loading}>
+          <button type="submit" className="button button--primary" disabled={loading}>
             {loading ? "Creating account..." : "Sign up"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        <p className="auth-form__footer">
           Already have an account?{" "}
-          <Link to="/login" className="font-semibold text-brand-700">
+          <Link to="/login" className="text-link">
             Log in
           </Link>
         </p>

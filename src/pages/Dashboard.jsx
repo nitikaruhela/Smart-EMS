@@ -9,6 +9,7 @@ import {
   subscribeToRegistrationsByUser,
   subscribeToRegistrationsForEvents,
 } from "../services/eventService";
+import { normalizeUserRole } from "../utils/userRole";
 
 const hasCoordinates = (event) =>
   Number.isFinite(Number.parseFloat(event.latitude)) &&
@@ -16,6 +17,7 @@ const hasCoordinates = (event) =>
 
 export default function Dashboard() {
   const { user, role, isFirebaseConfigured } = useAuth();
+  const normalizedRole = normalizeUserRole(role);
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [myEvents, setMyEvents] = useState([]);
@@ -43,7 +45,7 @@ export default function Dashboard() {
       ),
     ];
 
-    if (role === "Organizer") {
+    if (normalizedRole === "Organizer") {
       unsubscribers.push(
         subscribeToEventsByOrganizer(
           user.uid,
@@ -56,7 +58,7 @@ export default function Dashboard() {
       );
     }
 
-    if (role === "Attendee") {
+    if (normalizedRole === "Attendee") {
       unsubscribers.push(
         subscribeToRegistrationsByUser(
           user.uid,
@@ -70,10 +72,10 @@ export default function Dashboard() {
     }
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
-  }, [role, user]);
+  }, [normalizedRole, user]);
 
   useEffect(() => {
-    if (role !== "Organizer" || !myEvents.length) {
+    if (normalizedRole !== "Organizer" || !myEvents.length) {
       setEventRegistrations([]);
       return undefined;
     }
@@ -83,13 +85,13 @@ export default function Dashboard() {
       setEventRegistrations,
       (snapshotError) => setError(snapshotError.message)
     );
-  }, [myEvents, role]);
+  }, [myEvents, normalizedRole]);
 
   useEffect(() => {
-    if (role !== "Organizer" && role !== "Attendee") {
+    if (normalizedRole !== "Organizer" && normalizedRole !== "Attendee") {
       setLoading(false);
     }
-  }, [role]);
+  }, [normalizedRole]);
 
   const featuredEvents = useMemo(() => {
     let normalized = [...events];
@@ -106,7 +108,7 @@ export default function Dashboard() {
   }, [events, filterType, sortBy]);
 
   const stats = useMemo(() => {
-    if (role !== "Organizer") {
+    if (normalizedRole !== "Organizer") {
       return [];
     }
 
@@ -127,7 +129,7 @@ export default function Dashboard() {
         detail: "Guests already verified through the QR entry system.",
       },
     ];
-  }, [eventRegistrations, myEvents.length, role]);
+  }, [eventRegistrations, myEvents.length, normalizedRole]);
 
   const registrationMap = useMemo(() => {
     return myRegistrations.reduce((accumulator, registration) => {
@@ -136,156 +138,246 @@ export default function Dashboard() {
     }, {});
   }, [myRegistrations]);
 
+  const registrationsByEventId = useMemo(() => {
+    return eventRegistrations.reduce((accumulator, registration) => {
+      accumulator[registration.eventId] = accumulator[registration.eventId] || [];
+      accumulator[registration.eventId].push(registration);
+      return accumulator;
+    }, {});
+  }, [eventRegistrations]);
+
+  const checkedInCount = useMemo(() => {
+    return eventRegistrations.filter((registration) => registration.checkedIn).length;
+  }, [eventRegistrations]);
+
+  const recentOrganizerEvents = useMemo(() => {
+    return [...myEvents]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 4);
+  }, [myEvents]);
+
+  const organizerHighlights = useMemo(() => {
+    if (normalizedRole !== "Organizer") {
+      return [];
+    }
+
+    const nextEvent = [...myEvents].sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+
+    return [
+      {
+        label: "Next Event",
+        value: nextEvent?.name || "No events scheduled",
+        detail: nextEvent?.date || "Create your first event to start tracking activity.",
+      },
+      {
+        label: "Live Registrations",
+        value: `${eventRegistrations.length}`,
+        detail: checkedInCount
+          ? `${checkedInCount} attendees already checked in.`
+          : "No attendees checked in yet.",
+      },
+    ];
+  }, [checkedInCount, eventRegistrations.length, myEvents, normalizedRole]);
+
   return (
-    <section className="space-y-8">
-      <div className="glass-panel overflow-hidden">
-        <div className="grid gap-8 px-6 py-8 lg:grid-cols-[1.2fr,0.8fr] lg:px-8">
-          <div className="space-y-4">
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-brand-600">
-              {role === "Organizer" ? "Organizer Command Center" : "Attendee Workspace"}
-            </p>
-            <h1 className="font-display text-4xl font-bold text-slate-950">
-              {role === "Organizer"
+    <section className="page">
+      <div className="card dashboard-hero">
+        <div className="section">
+          <p className="eyebrow">
+            {normalizedRole === "Organizer" ? "Organizer Command Center" : "Attendee Workspace"}
+          </p>
+          <h1 className="page-title">
+              {normalizedRole === "Organizer"
                 ? "Run polished event operations with real-time visibility."
                 : "Find events, secure your registration, and keep your QR pass ready."}
-            </h1>
-            <p className="max-w-2xl text-lg text-slate-600">
-              The dashboard adapts to your role, highlights live event data, and keeps key
-              workflows one click away.
+          </h1>
+          <p className="page-subtitle">
+            The dashboard adapts to your role, highlights live event data, and keeps key
+            workflows one click away.
+          </p>
+          {!isFirebaseConfigured ? (
+            <p className="alert alert--warning">
+              Firebase is not configured yet. The UI is ready, but authentication and
+              Firestore actions will stay disabled until `.env` is filled in.
             </p>
-            {!isFirebaseConfigured ? (
-              <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                Firebase is not configured yet. The UI is ready, but authentication and
-                Firestore actions will stay disabled until `.env` is filled in.
-              </p>
-            ) : null}
-            {error ? (
-              <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</p>
-            ) : null}
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          ) : null}
+          {error ? <p className="alert alert--danger">{error}</p> : null}
+        </div>
+        <div className="action-stack">
             <Link
-              to={role === "Organizer" ? "/events/create" : "/events/college"}
-              className="rounded-3xl bg-slate-950 p-6 text-white shadow-soft"
+              to={normalizedRole === "Organizer" ? "/events/create" : "/events/college"}
+              className="card card--hero card--interactive"
             >
-              <p className="text-sm uppercase tracking-[0.22em] text-slate-300">Quick Action</p>
-              <h2 className="mt-3 font-display text-2xl font-bold">
-                {role === "Organizer" ? "Create Event" : "Browse Events"}
+              <p className="card-kicker card-kicker--light">Quick Action</p>
+              <h2 className="action-card__title">
+                {normalizedRole === "Organizer" ? "Create Event" : "Browse Events"}
               </h2>
-              <p className="mt-3 text-sm text-slate-300">
-                {role === "Organizer"
+              <p className="card-copy">
+                {normalizedRole === "Organizer"
                   ? "Launch a new event and start accepting registrations."
                   : "Explore available college events and reserve your seat."}
               </p>
             </Link>
-            <Link to="/events/select" className="glass-panel p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-slate-400">Workflows</p>
-              <h2 className="mt-3 font-display text-2xl font-bold text-slate-950">
-                Event Type Selection
-              </h2>
-              <p className="mt-3 text-sm text-slate-500">
+            <Link to="/events/select" className="card card--interactive">
+              <p className="card-kicker">Workflows</p>
+              <h2 className="card-title">Event Type Selection</h2>
+              <p className="card-copy">
                 Jump into specialized flows for college and cultural events.
               </p>
             </Link>
-            <Link to="/events/map" className="glass-panel p-6">
-              <p className="text-sm uppercase tracking-[0.22em] text-slate-400">Visual View</p>
-              <h2 className="mt-3 font-display text-2xl font-bold text-slate-950">
-                Event Map
-              </h2>
-              <p className="mt-3 text-sm text-slate-500">
+            <Link to="/events/map" className="card card--interactive">
+              <p className="card-kicker">Visual View</p>
+              <h2 className="card-title">Event Map</h2>
+              <p className="card-copy">
                 Explore every mapped event location in one interactive view.
               </p>
             </Link>
-          </div>
         </div>
       </div>
 
-      {role === "Organizer" ? (
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-2xl font-bold text-slate-950">Organizer Metrics</h2>
-            <Link to="/events/create" className="btn-primary">
+      {normalizedRole === "Organizer" ? (
+        <section className="section">
+          <div className="section-header">
+            <div className="section-header__copy">
+              <h2 className="section-heading">Organizer Metrics</h2>
+              <p className="section-subtitle">Live counts from your Firestore event activity.</p>
+            </div>
+            <Link to="/events/create" className="button button--primary">
               Create Event
             </Link>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {stats.map((item) => (
-              <DashboardCard key={item.title} {...item} />
+          <div className="metric-grid">
+            {stats.map((item, index) => (
+              <DashboardCard
+                key={item.title}
+                {...item}
+                loading={loading}
+                icon={["Events", "Signups", "Checked In"][index]}
+                tone={["brand", "amber", "emerald"][index]}
+              />
             ))}
           </div>
-          <div className="space-y-4">
-            <h3 className="font-display text-2xl font-bold text-slate-950">Your Events</h3>
+          <div className="highlight-grid">
+            {organizerHighlights.map((item) => (
+              <div key={item.label} className="card highlight-card">
+                <p className="card-kicker">{item.label}</p>
+                <p className="highlight-card__value">{loading ? "Loading..." : item.value}</p>
+                <p className="helper-text">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+          <div className="section">
+            <div className="section-header">
+              <div className="section-header__copy">
+                <h3 className="section-heading">Recent Events</h3>
+                <p className="section-subtitle">
+                  Your latest organizer activity with live registration counts.
+                </p>
+              </div>
+              {!loading && myEvents.length ? (
+                <span className="pill">
+                  {myEvents.length} total event{myEvents.length === 1 ? "" : "s"}
+                </span>
+              ) : null}
+            </div>
             {loading ? (
-              <p className="text-slate-500">Loading your events...</p>
-            ) : myEvents.length ? (
-              <div className="grid gap-6 xl:grid-cols-2">
-                {myEvents.map((event) => (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    onViewMap={() =>
-                      navigate("/events/map", {
-                        state: { eventId: event.id },
-                      })
-                    }
-                    mapDisabled={!hasCoordinates(event)}
-                    footer={
-                      <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                        Registrations:{" "}
-                        {
-                          eventRegistrations.filter(
-                            (registration) => registration.eventId === event.id
-                          ).length
-                        }
-                      </div>
-                    }
-                  />
+              <div className="placeholder-grid">
+                {Array.from({ length: 2 }).map((_, index) => (
+                  <div key={index} className="card placeholder-card">
+                    <div className="skeleton skeleton--title" />
+                    <div className="skeleton skeleton--headline" />
+                    <div className="stat-grid">
+                      <div className="skeleton skeleton--panel" />
+                      <div className="skeleton skeleton--panel" />
+                    </div>
+                  </div>
                 ))}
               </div>
+            ) : recentOrganizerEvents.length ? (
+              <div className="card-grid">
+                {recentOrganizerEvents.map((event) => {
+                  const registrationsForEvent = registrationsByEventId[event.id] || [];
+                  const checkedInForEvent = registrationsForEvent.filter(
+                    (registration) => registration.checkedIn
+                  ).length;
+
+                  return (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      onViewMap={() =>
+                        navigate("/events/map", {
+                          state: { eventId: event.id },
+                        })
+                      }
+                      mapDisabled={!hasCoordinates(event)}
+                      footer={
+                        <div className="stat-grid">
+                          <div className="stat-block">
+                            <p className="meta-label">Registrations</p>
+                            <p className="stat-block__value">{registrationsForEvent.length}</p>
+                          </div>
+                          <div className="soft-panel soft-panel--success">
+                            <p className="meta-label">Checked In</p>
+                            <p className="stat-block__value">{checkedInForEvent}</p>
+                          </div>
+                        </div>
+                      }
+                    />
+                  );
+                })}
+              </div>
             ) : (
-              <div className="glass-panel p-6 text-slate-500">
-                You have not created any events yet.
+              <div className="card empty-state">
+                <p className="empty-state__title">No organizer data yet.</p>
+                <p className="empty-state__text">
+                  Create your first event to start tracking registrations and live check-ins
+                  here.
+                </p>
               </div>
             )}
           </div>
         </section>
-      ) : (
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-2xl font-bold text-slate-950">My Registrations</h2>
-            <Link to="/events/college" className="btn-primary">
+      ) : normalizedRole === "Attendee" ? (
+        <section className="section">
+          <div className="section-header">
+            <div className="section-header__copy">
+              <h2 className="section-heading">My Registrations</h2>
+              <p className="section-subtitle">Keep your latest event passes and statuses close.</p>
+            </div>
+            <Link to="/events/college" className="button button--primary">
               Browse Events
             </Link>
           </div>
           {loading ? (
-            <p className="text-slate-500">Loading your registrations...</p>
+            <div className="card empty-state">
+              <p className="empty-state__title">Loading your registrations...</p>
+            </div>
           ) : myRegistrations.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="card-grid">
               {myRegistrations.map((registration) => (
-                <div key={registration.id} className="glass-panel p-6">
-                  <div className="flex items-start justify-between gap-4">
+                <div key={registration.id} className="card list-card">
+                  <div className="list-card__row">
                     <div>
-                      <p className="font-display text-xl font-bold text-slate-950">
-                        {registration.eventName}
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">{registration.email}</p>
+                      <p className="section-heading">{registration.eventName}</p>
+                      <p className="helper-text">{registration.email}</p>
                     </div>
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      className={`status-badge ${
                         registration.checkedIn
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 text-amber-700"
+                          ? "status-badge--success"
+                          : "status-badge--warning"
                       }`}
                     >
                       {registration.checkedIn ? "Checked In" : "Pending"}
                     </span>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-3">
+                  <div className="filter-bar">
                     <a
                       href={registration.qrCode}
                       target="_blank"
                       rel="noreferrer"
-                      className="btn-secondary"
+                      className="button button--secondary"
                     >
                       View QR Code
                     </a>
@@ -296,7 +388,7 @@ export default function Dashboard() {
                           state: { registrationId: registration.id },
                         })
                       }
-                      className="btn-secondary"
+                      className="button button--secondary"
                     >
                       Manage Registration
                     </button>
@@ -305,26 +397,36 @@ export default function Dashboard() {
               ))}
             </div>
           ) : (
-            <div className="glass-panel p-6 text-slate-500">
-              No registrations yet. Browse college events to claim your first QR pass.
+            <div className="card empty-state">
+              <p className="empty-state__title">No registrations yet.</p>
+              <p className="empty-state__text">
+                Browse college events to claim your first QR pass.
+              </p>
             </div>
           )}
         </section>
+      ) : (
+        <section className="card empty-state">
+          <p className="empty-state__title">Your profile is still syncing.</p>
+          <p className="empty-state__text">
+            Sign out and sign back in if your role does not appear after a moment.
+          </p>
+        </section>
       )}
 
-      <section className="space-y-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="font-display text-2xl font-bold text-slate-950">Featured Events</h2>
-            <p className="text-slate-500">
+      <section className="section">
+        <div className="section-header">
+          <div className="section-header__copy">
+            <h2 className="section-heading">Featured Events</h2>
+            <p className="section-subtitle">
               Shared event feed with filtering and sorting for faster discovery.
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="filter-bar">
             <select
               value={filterType}
               onChange={(event) => setFilterType(event.target.value)}
-              className="input-field min-w-[180px]"
+              className="select"
             >
               <option value="All">All Event Types</option>
               <option value="College Event">College Event</option>
@@ -333,7 +435,7 @@ export default function Dashboard() {
             <select
               value={sortBy}
               onChange={(event) => setSortBy(event.target.value)}
-              className="input-field min-w-[160px]"
+              className="select"
             >
               <option value="date">Sort by Date</option>
               <option value="venue">Sort by Venue</option>
@@ -342,7 +444,7 @@ export default function Dashboard() {
         </div>
 
         {featuredEvents.length ? (
-          <div className="grid gap-6 xl:grid-cols-3">
+          <div className="workflow-grid">
             {featuredEvents.map((event) => (
               <EventCard
                 key={event.id}
@@ -353,12 +455,14 @@ export default function Dashboard() {
                   })
                 }
                 mapDisabled={!hasCoordinates(event)}
-                actionLabel={role === "Attendee" ? "Open Registration" : undefined}
+                actionLabel={normalizedRole === "Attendee" ? "Open Registration" : undefined}
                 onAction={() => navigate("/events/college")}
-                actionDisabled={role === "Attendee" && !!registrationMap[event.id]}
+                actionDisabled={
+                  normalizedRole === "Attendee" && !!registrationMap[event.id]
+                }
                 footer={
-                  role === "Attendee" && registrationMap[event.id] ? (
-                    <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  normalizedRole === "Attendee" && registrationMap[event.id] ? (
+                    <p className="soft-panel soft-panel--success">
                       Already registered. View your pass in My Registrations.
                     </p>
                   ) : null
@@ -367,8 +471,11 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
-          <div className="glass-panel p-6 text-slate-500">
-            No featured events match your current filter.
+          <div className="card empty-state">
+            <p className="empty-state__title">No featured events match your filter.</p>
+            <p className="empty-state__text">
+              Adjust the event type or sort order to explore more options.
+            </p>
           </div>
         )}
       </section>

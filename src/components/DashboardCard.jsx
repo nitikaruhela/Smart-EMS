@@ -1,11 +1,38 @@
-export default function DashboardCard({ title, value, detail }) {
+const toneStyles = {
+  slate: "pill",
+  brand: "pill pill--brand",
+  emerald: "pill pill--success",
+  amber: "pill pill--amber",
+};
+
+export default function DashboardCard({
+  title,
+  value,
+  detail,
+  icon,
+  tone = "slate",
+  loading = false,
+}) {
+  const badgeClass = toneStyles[tone] || toneStyles.slate;
+
   return (
-    <div className="glass-panel p-6">
-      <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">
-        {title}
-      </p>
-      <p className="mt-4 font-display text-4xl font-bold text-slate-950">{value}</p>
-      <p className="mt-3 text-sm text-slate-500">{detail}</p>
+    <div className="card metric-card">
+      <div className="section-header">
+        <div>
+          <p className="card-kicker">{title}</p>
+          {loading ? (
+            <div className="skeleton skeleton--headline" />
+          ) : (
+            <p className="metric-card__value">{value}</p>
+          )}
+        </div>
+        {icon ? <span className={`metric-card__badge ${badgeClass}`}>{icon}</span> : null}
+      </div>
+      {loading ? (
+        <div className="skeleton skeleton--title" />
+      ) : (
+        <p className="metric-card__detail">{detail}</p>
+      )}
     </div>
   );
 }

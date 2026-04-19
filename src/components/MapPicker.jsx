@@ -109,25 +109,25 @@ export default function MapPicker({ onLocationSelect, initialLocation = null }) 
   const longitudeText = selectedPosition ? selectedPosition[1].toFixed(6) : "--";
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">Click on map to select event location</p>
+    <div className="map-picker">
+      <div className="map-picker__bar">
+        <p className="helper-text">Click on map to select event location</p>
         <button
           type="button"
-          className="btn-secondary px-4 py-2"
+          className="button button--secondary"
           onClick={handleUseMyLocation}
         >
           Use My Location
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200 shadow-soft">
+      <div className="map-frame map-height-default">
         {isMapReady ? (
           <MapContainer
             center={normalizedInitialPosition || defaultCenter}
             zoom={normalizedInitialPosition ? 13 : defaultZoom}
             scrollWheelZoom
-            className="h-[400px] w-full"
+            className="map-height-default"
           >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -140,24 +140,24 @@ export default function MapPicker({ onLocationSelect, initialLocation = null }) 
             ) : null}
           </MapContainer>
         ) : (
-          <div className="flex h-[400px] items-center justify-center bg-white text-sm text-slate-500">
+          <div className="map-state map-height-default">
             Preparing map...
           </div>
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl bg-slate-50 p-4">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Latitude</p>
-          <p className="mt-2 font-semibold text-slate-800">{latitudeText}</p>
+      <div className="coordinate-grid">
+        <div className="stat-block">
+          <p className="meta-label">Latitude</p>
+          <p className="stat-block__value">{latitudeText}</p>
         </div>
-        <div className="rounded-2xl bg-slate-50 p-4">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Longitude</p>
-          <p className="mt-2 font-semibold text-slate-800">{longitudeText}</p>
+        <div className="stat-block">
+          <p className="meta-label">Longitude</p>
+          <p className="stat-block__value">{longitudeText}</p>
         </div>
       </div>
 
-      {locationError ? <p className="text-sm text-amber-700">{locationError}</p> : null}
+      {locationError ? <p className="alert alert--warning">{locationError}</p> : null}
     </div>
   );
 }

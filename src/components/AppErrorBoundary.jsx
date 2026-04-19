@@ -25,15 +25,11 @@ export default class AppErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="glass-panel mt-6 max-w-3xl px-6 py-6 text-slate-700">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-600">
-            Render Error
-          </p>
-          <h1 className="mt-2 font-display text-3xl font-bold text-slate-950">
-            This page hit a client-side error.
-          </h1>
-          <p className="mt-3 text-sm text-slate-600">{this.state.errorMessage}</p>
-          <button type="button" className="btn-primary mt-5" onClick={this.handleReset}>
+        <div className="card empty-state">
+          <p className="eyebrow">Render Error</p>
+          <h1 className="section-heading">This page hit a client-side error.</h1>
+          <p className="empty-state__text">{this.state.errorMessage}</p>
+          <button type="button" className="button button--primary" onClick={this.handleReset}>
             Reload Page
           </button>
         </div>
