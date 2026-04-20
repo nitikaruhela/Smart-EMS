@@ -32,18 +32,27 @@ const hasCoordinates = (event) =>
   Number.isFinite(Number.parseFloat(event.latitude)) &&
   Number.isFinite(Number.parseFloat(event.longitude));
 
-const getRegistrationIdFromQrPayload = (rawPayload) => {
-  const payload = JSON.parse(rawPayload);
+const parseQrPayload = (rawPayload) => {
+  let payload;
 
-  if (payload?.registrationId) {
-    return payload.registrationId;
+  try {
+    payload = JSON.parse(rawPayload);
+  } catch (error) {
+    throw new Error("Invalid QR code format.");
   }
 
-  if (payload?.r) {
-    return payload.r;
+  const registrationId = payload?.registrationId || payload?.r;
+  const eventId = payload?.eventId || payload?.e;
+
+  if (!registrationId) {
+    throw new Error("Invalid QR code. Registration ID is missing.");
   }
 
-  throw new Error("Invalid QR code. Registration ID is missing.");
+  if (!eventId) {
+    throw new Error("Invalid QR code. Event ID is missing.");
+  }
+
+  return { registrationId, eventId };
 };
 
 export default function CollegeEvent({ createMode = false }) {
@@ -294,12 +303,39 @@ export default function CollegeEvent({ createMode = false }) {
     setFeedback("");
 
     try {
-      const registrationId = getRegistrationIdFromQrPayload(scanResult.text);
+      if (!user?.uid) {
+        throw new Error("You must be logged in as an organizer to scan entries.");
+      }
+
+      if (normalizedRole !== "Organizer") {
+        throw new Error("Only organizer accounts can scan attendee QR codes.");
+      }
+
+      const { registrationId, eventId } = parseQrPayload(scanResult.text);
       const registration = await getRegistrationById(registrationId);
-      await markRegistrationCheckedIn(registration.id);
+
+      if (registration.eventId !== eventId) {
+        throw new Error("QR event mismatch. Please generate a fresh attendee pass.");
+      }
+
+      const organizerEvent = myEvents.find((event) => event.id === registration.eventId);
+
+      if (!organizerEvent) {
+        throw new Error("This registration does not belong to one of your events.");
+      }
+
+      await markRegistrationCheckedIn({
+        registrationId: registration.id,
+        eventId: organizerEvent.id,
+        organizerId: user.uid,
+      });
       setFeedback(`${registration.name} checked in successfully.`);
     } catch (scanError) {
-      console.error("[CollegeEvent] Failed to process QR scan.", scanError);
+      console.error("[CollegeEvent] Failed to process QR scan.", {
+        code: scanError?.code || "unknown",
+        message: scanError?.message || "Unknown scan error.",
+        organizerId: user?.uid || "",
+      });
       setError(scanError.message || "Unable to process QR code.");
     }
   };

@@ -59,10 +59,20 @@ export const eventTypes = [
 ];
 
 function logFirestoreError(scope, error, metadata) {
-  console.error(`[Firestore] ${scope} failed.`, error, metadata || {});
+  console.error(`[Firestore] ${scope} failed.`, {
+    code: error?.code || "unknown",
+    message: error?.message || "Unknown Firestore error.",
+    ...(metadata || {}),
+  });
 }
 
 function createFriendlyFirestoreError(error, fallbackMessage) {
+  if (error?.code === "permission-denied") {
+    return new Error(
+      `${fallbackMessage} Firestore denied the request. Confirm the signed-in account, organizer ownership, and your current rules.`
+    );
+  }
+
   return new Error(error?.message || fallbackMessage);
 }
 
@@ -90,6 +100,14 @@ function normalizeRegistrationPayload(payload) {
     eventId: payload.eventId?.trim() || "",
     eventName: payload.eventName?.trim() || "",
     organizerId: payload.organizerId?.trim() || "",
+  };
+}
+
+function normalizeRegistrationCheckInPayload(payload) {
+  return {
+    registrationId: payload?.registrationId?.trim() || "",
+    eventId: payload?.eventId?.trim() || "",
+    organizerId: payload?.organizerId?.trim() || "",
   };
 }
 
@@ -122,6 +140,20 @@ function validateRegistrationPayload(payload) {
 
   if (payload.attendeeRole !== "Attendee") {
     throw new Error("Only attendee accounts can register for events.");
+  }
+}
+
+function validateRegistrationCheckInPayload(payload) {
+  if (!payload.registrationId) {
+    throw new Error("Registration ID is missing.");
+  }
+
+  if (!payload.eventId) {
+    throw new Error("Event ID is missing.");
+  }
+
+  if (!payload.organizerId) {
+    throw new Error("Organizer ID is missing.");
   }
 }
 
@@ -287,12 +319,14 @@ export async function registerForEvent(payload) {
   }
 }
 
-export async function markRegistrationCheckedIn(registrationId) {
+export async function markRegistrationCheckedIn(payload) {
   if (!isFirebaseConfigured) {
     throw new Error("Firebase is not configured.");
   }
 
-  const registrationRef = doc(db, "registrations", registrationId);
+  const normalizedPayload = normalizeRegistrationCheckInPayload(payload);
+  validateRegistrationCheckInPayload(normalizedPayload);
+  const registrationRef = doc(db, "registrations", normalizedPayload.registrationId);
 
   try {
     return await runTransaction(db, async (transaction) => {
@@ -304,6 +338,17 @@ export async function markRegistrationCheckedIn(registrationId) {
 
       const registration = registrationSnapshot.data();
 
+      if (registration.eventId !== normalizedPayload.eventId) {
+        throw new Error("Scanned registration does not belong to this event.");
+      }
+
+      if (
+        registration.organizerId &&
+        registration.organizerId !== normalizedPayload.organizerId
+      ) {
+        throw new Error("You can only check in registrations for your own event.");
+      }
+
       // Transactions ensure two scanners cannot check in the same attendee twice.
       if (registration.checkedIn) {
         throw new Error("This attendee has already checked in.");
@@ -311,12 +356,12 @@ export async function markRegistrationCheckedIn(registrationId) {
 
       transaction.update(registrationRef, {
         checkedIn: true,
-        checkedInAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       });
+
+      return { id: registrationSnapshot.id, ...registration, checkedIn: true };
     });
   } catch (error) {
-    logFirestoreError("markRegistrationCheckedIn", error, { registrationId });
+    logFirestoreError("markRegistrationCheckedIn", error, normalizedPayload);
     throw createFriendlyFirestoreError(error, "Unable to check in this registration.");
   }
 }

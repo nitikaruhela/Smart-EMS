@@ -51,13 +51,17 @@ export default function Navbar() {
                 <p className="navbar__role">{role || "User"}</p>
                 <p className="navbar__email">{user.email}</p>
               </div>
-              <button type="button" onClick={handleLogout} className="button button--secondary">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="button button--secondary navbar__button"
+              >
                 Logout
               </button>
             </div>
           </div>
         ) : (
-          <div className="navbar__content">
+          <div className="navbar__content navbar__content--public">
             <nav className="navbar__nav">
               {navItems.slice(0, 3).map((item) => (
                 <NavLink

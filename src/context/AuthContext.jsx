@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -17,14 +18,16 @@ import { normalizeUserRole } from "../utils/userRole";
 
 const AuthContext = createContext(null);
 
-async function ensureUserProfileDocument(firebaseUser, fallbackRole = "Attendee") {
+async function ensureUserProfileDocument(firebaseUser, fallbackRole = null) {
   const userRef = doc(db, "users", firebaseUser.uid);
   const userSnapshot = await getDoc(userRef);
   const storedRole = userSnapshot.exists() ? userSnapshot.data().role : null;
   const normalizedRole = normalizeUserRole(storedRole, fallbackRole);
 
   if (!normalizedRole) {
-    throw new Error("User role is invalid. Please sign up again and choose a valid role.");
+    throw new Error(
+      "User role is missing or invalid. Update users/{uid}.role to Organizer or Attendee, then sign in again."
+    );
   }
 
   const nextUserData = {
@@ -70,6 +73,7 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const pendingRoleRef = useRef(null);
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
@@ -88,8 +92,12 @@ export function AuthProvider({ children }) {
       }
 
       try {
-        const profile = await ensureUserProfileDocument(firebaseUser);
+        const profile = await ensureUserProfileDocument(
+          firebaseUser,
+          pendingRoleRef.current
+        );
         setRole(profile.role);
+        pendingRoleRef.current = null;
       } catch (error) {
         console.error("[Auth] Failed to hydrate auth state.", error);
         setAuthError(error.message);
@@ -116,6 +124,7 @@ export function AuthProvider({ children }) {
     }
 
     try {
+      pendingRoleRef.current = normalizedRole;
       const credential = await createUserWithEmailAndPassword(auth, email, password);
       await setDoc(doc(db, "users", credential.user.uid), {
         uid: credential.user.uid,
@@ -132,6 +141,7 @@ export function AuthProvider({ children }) {
       setRole(normalizedRole);
       return credential.user;
     } catch (error) {
+      pendingRoleRef.current = null;
       console.error("[Auth] Signup failed.", error);
       throw error;
     }
@@ -162,6 +172,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
+      pendingRoleRef.current = null;
       await signOut(auth);
       console.info("[Auth] Logout completed.");
     } catch (error) {
