@@ -4,6 +4,7 @@ import DashboardCard from "../components/DashboardCard";
 import EventCard from "../components/EventCard";
 import { useAuth } from "../context/AuthContext";
 import {
+  deleteEvent,
   subscribeToEvents,
   subscribeToEventsByOrganizer,
   subscribeToRegistrationsByUser,
@@ -27,6 +28,33 @@ export default function Dashboard() {
   const [filterType, setFilterType] = useState("All");
   const [sortBy, setSortBy] = useState("date");
   const [error, setError] = useState("");
+
+  const handleDeleteEvent = async (eventRecord) => {
+    try {
+      if (!user?.uid) {
+        throw new Error("You must be logged in to delete an event.");
+      }
+
+      if (normalizedRole !== "Organizer") {
+        throw new Error("Only organizer accounts can delete events.");
+      }
+
+      const shouldDelete = window.confirm(
+        `Delete "${eventRecord.name}"? This will also remove all registrations for this event.`
+      );
+
+      if (!shouldDelete) {
+        return;
+      }
+
+      await deleteEvent({
+        eventId: eventRecord.id,
+        organizerId: user.uid,
+      });
+    } catch (deleteError) {
+      setError(deleteError.message || "Unable to delete the event.");
+    }
+  };
 
   useEffect(() => {
     if (!user) {
@@ -311,6 +339,10 @@ export default function Dashboard() {
                         })
                       }
                       mapDisabled={!hasCoordinates(event)}
+                      secondaryActionLabel="Delete Event"
+                      onSecondaryAction={() => handleDeleteEvent(event)}
+                      secondaryActionDisabled={!isFirebaseConfigured}
+                      secondaryActionTone="danger"
                       footer={
                         <div className="stat-grid">
                           <div className="stat-block">

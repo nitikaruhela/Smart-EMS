@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { NotFoundException } from "@zxing/library";
 
-export default function QrScanner({ onResult }) {
+export default function QrScanner({ onResult, paused = false }) {
   const videoRef = useRef(null);
   const readerRef = useRef(null);
   const scannerRef = useRef(null);
@@ -10,6 +10,10 @@ export default function QrScanner({ onResult }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (paused) {
+      return undefined;
+    }
+
     if (!videoRef.current) {
       setError("Camera preview is unavailable.");
       return undefined;
@@ -102,13 +106,18 @@ export default function QrScanner({ onResult }) {
         console.error("QR scanner cleanup failed.", cleanupError);
       });
     };
-  }, [onResult]);
+  }, [onResult, paused]);
 
   return (
     <div className="qr-scanner">
       <div className="qr-scanner__frame">
         <video ref={videoRef} className="qr-scanner__video" muted playsInline />
       </div>
+      {paused ? (
+        <p className="helper-text">
+          Scanner is paused until you choose to scan again.
+        </p>
+      ) : null}
       {error ? <p className="alert alert--danger">{error}</p> : null}
     </div>
   );

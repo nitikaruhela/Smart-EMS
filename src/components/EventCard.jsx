@@ -3,6 +3,10 @@ export default function EventCard({
   actionLabel,
   onAction,
   actionDisabled = false,
+  secondaryActionLabel,
+  onSecondaryAction,
+  secondaryActionDisabled = false,
+  secondaryActionTone = "secondary",
   onViewMap,
   mapDisabled = false,
   mapLabel = "View on Map",
@@ -10,6 +14,12 @@ export default function EventCard({
 }) {
   return (
     <article className="card card--interactive event-card">
+      {event.imageUrl ? (
+        <div className="event-card__image-frame">
+          <img src={event.imageUrl} alt={event.name} className="event-card__image" />
+        </div>
+      ) : null}
+
       <div className="event-card__body">
         <div className="event-card__top">
           <div>
@@ -33,7 +43,7 @@ export default function EventCard({
 
       <div className="event-card__footer">
         {footer}
-        {actionLabel || onViewMap ? (
+        {actionLabel || secondaryActionLabel || onViewMap ? (
           <div className="event-card__actions">
             {onViewMap ? (
               <button
@@ -43,6 +53,20 @@ export default function EventCard({
                 className="button button--secondary"
               >
                 {mapLabel}
+              </button>
+            ) : null}
+            {secondaryActionLabel ? (
+              <button
+                type="button"
+                onClick={onSecondaryAction}
+                disabled={secondaryActionDisabled}
+                className={`button ${
+                  secondaryActionTone === "danger"
+                    ? "button--danger"
+                    : "button--secondary"
+                }`}
+              >
+                {secondaryActionLabel}
               </button>
             ) : null}
             {actionLabel ? (
