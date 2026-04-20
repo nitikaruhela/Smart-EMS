@@ -7,6 +7,7 @@ import { useAuth } from "./context/AuthContext";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const EventSelection = lazy(() => import("./pages/EventSelection"));
+const EventBrowser = lazy(() => import("./pages/EventBrowser"));
 const CollegeEvent = lazy(() => import("./pages/CollegeEvent"));
 const CulturalEvent = lazy(() => import("./pages/CulturalEvent"));
 const MapView = lazy(() => import("./pages/MapView"));
@@ -46,6 +47,14 @@ function AppShell() {
                 element={
                   <ProtectedRoute>
                     <EventSelection />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/events/browser"
+                element={
+                  <ProtectedRoute>
+                    <EventBrowser />
                   </ProtectedRoute>
                 }
               />

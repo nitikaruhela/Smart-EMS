@@ -22,6 +22,18 @@ export default function EventSelection() {
         </p>
       </div>
 
+      <Link to="/events/browser" className="card card--interactive workflow-card">
+        <div>
+          <p className="eyebrow">Interactive Demo</p>
+          <h2 className="workflow-card__title">Event Browser</h2>
+          <p className="workflow-card__text">
+            Open a responsive event list with clickable cards, a detail panel, and modal
+            event previews inside the existing app.
+          </p>
+        </div>
+        <span className="workflow-card__link">Open browser</span>
+      </Link>
+
       <div className="workflow-grid">
         {eventTypes.map((eventType) => {
           const route = eventRoutes[eventType];

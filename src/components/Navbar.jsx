@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 const navItems = [
   { label: "Dashboard", to: "/dashboard" },
   { label: "Event Types", to: "/events/select" },
+  { label: "Event Browser", to: "/events/browser" },
   { label: "College Events", to: "/events/college" },
   { label: "Map View", to: "/events/map" },
   { label: "Cultural Planner", to: "/events/cultural" },

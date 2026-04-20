@@ -5,6 +5,7 @@ import QrScanner from "../components/QrScanner";
 import { useAuth } from "../context/AuthContext";
 import {
   createEvent,
+  deleteEvent,
   getRegistrationById,
   markRegistrationCheckedIn,
   registerForEvent,
@@ -26,6 +27,8 @@ const emptyEvent = {
   venue: "",
   latitude: "",
   longitude: "",
+  imageUrl: "",
+  imageName: "",
 };
 
 const hasCoordinates = (event) =>
@@ -33,27 +36,48 @@ const hasCoordinates = (event) =>
   Number.isFinite(Number.parseFloat(event.longitude));
 
 const parseQrPayload = (rawPayload) => {
-  let payload;
-
-  try {
-    payload = JSON.parse(rawPayload);
-  } catch (error) {
-    throw new Error("Invalid QR code format.");
-  }
-
-  const registrationId = payload?.registrationId || payload?.r;
-  const eventId = payload?.eventId || payload?.e;
+  const registrationId = rawPayload?.trim();
 
   if (!registrationId) {
-    throw new Error("Invalid QR code. Registration ID is missing.");
+    throw new Error("Invalid QR Code");
   }
 
-  if (!eventId) {
-    throw new Error("Invalid QR code. Event ID is missing.");
-  }
-
-  return { registrationId, eventId };
+  return registrationId;
 };
+
+const readEventImage = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const image = new Image();
+
+      image.onload = () => {
+        const maxWidth = 1200;
+        const scale = Math.min(1, maxWidth / image.width);
+        const canvas = document.createElement("canvas");
+
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+          reject(new Error("Unable to prepare the selected picture."));
+          return;
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+
+      image.onerror = () => reject(new Error("Selected file is not a valid image."));
+      image.src = reader.result;
+    };
+
+    reader.onerror = () => reject(new Error("Unable to read the selected picture."));
+    reader.readAsDataURL(file);
+  });
 
 export default function CollegeEvent({ createMode = false }) {
   const { user, role, isFirebaseConfigured } = useAuth();
@@ -65,6 +89,7 @@ export default function CollegeEvent({ createMode = false }) {
   const [eventRegistrations, setEventRegistrations] = useState([]);
   const [activeQr, setActiveQr] = useState(null);
   const [scannerEnabled, setScannerEnabled] = useState(false);
+  const [scanned, setScanned] = useState(false);
   const [mapModalOpen, setMapModalOpen] = useState(false);
   const [selectedMapEventId, setSelectedMapEventId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -197,6 +222,41 @@ export default function CollegeEvent({ createMode = false }) {
     }));
   };
 
+  const handleImageChange = async (event) => {
+    const selectedFile = event.target.files?.[0];
+
+    if (!selectedFile) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setFeedback("");
+
+    try {
+      const imageUrl = await readEventImage(selectedFile);
+      setEventForm((current) => ({
+        ...current,
+        imageUrl,
+        imageName: selectedFile.name,
+      }));
+      setFeedback("Event picture added successfully.");
+    } catch (imageError) {
+      setError(imageError.message || "Unable to add the event picture.");
+    } finally {
+      event.target.value = "";
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setEventForm((current) => ({
+      ...current,
+      imageUrl: "",
+      imageName: "",
+    }));
+  };
+
   const handleCreateEvent = async (event) => {
     event.preventDefault();
     setLoading(true);
@@ -293,12 +353,82 @@ export default function CollegeEvent({ createMode = false }) {
     }
   };
 
+  const handleDeleteEvent = async (eventRecord) => {
+    setLoading(true);
+    setError("");
+    setFeedback("");
+
+    try {
+      if (!user?.uid) {
+        throw new Error("You must be logged in to delete an event.");
+      }
+
+      if (normalizedRole !== "Organizer") {
+        throw new Error("Only organizer accounts can delete events.");
+      }
+
+      const shouldDelete = window.confirm(
+        `Delete "${eventRecord.name}"? This will also remove all registrations for this event.`
+      );
+
+      if (!shouldDelete) {
+        return;
+      }
+
+      await deleteEvent({
+        eventId: eventRecord.id,
+        organizerId: user.uid,
+      });
+      setFeedback("Event deleted successfully.");
+    } catch (deleteError) {
+      console.error("[CollegeEvent] Failed to delete event.", deleteError);
+      setError(deleteError.message || "Unable to delete the event.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchRegistration = async (registrationId) => {
+    try {
+      const registration = await getRegistrationById(registrationId);
+
+      if (!registration?.eventId) {
+        throw new Error("Registration is missing its event details.");
+      }
+
+      if (registration.checkedIn) {
+        throw new Error("Already checked in");
+      }
+
+      return registration;
+    } catch (fetchError) {
+      if (fetchError.message === "Registration not found.") {
+        throw new Error("Invalid QR Code");
+      }
+
+      throw fetchError;
+    }
+  };
+
+  const markCheckIn = async (registration) => {
+    const organizerEvent = myEvents.find((event) => event.id === registration.eventId);
+
+    if (!organizerEvent) {
+      throw new Error("This registration does not belong to one of your events.");
+    }
+
+    return markRegistrationCheckedIn({
+      registrationId: registration.id,
+      eventId: organizerEvent.id,
+      organizerId: user.uid,
+    });
+  };
+
   const handleScan = async (scanResult) => {
-    if (!scanResult?.text) {
+    if (!scanResult?.text || scanned) {
       return;
     }
 
-    setScannerEnabled(false);
     setError("");
     setFeedback("");
 
@@ -311,24 +441,10 @@ export default function CollegeEvent({ createMode = false }) {
         throw new Error("Only organizer accounts can scan attendee QR codes.");
       }
 
-      const { registrationId, eventId } = parseQrPayload(scanResult.text);
-      const registration = await getRegistrationById(registrationId);
-
-      if (registration.eventId !== eventId) {
-        throw new Error("QR event mismatch. Please generate a fresh attendee pass.");
-      }
-
-      const organizerEvent = myEvents.find((event) => event.id === registration.eventId);
-
-      if (!organizerEvent) {
-        throw new Error("This registration does not belong to one of your events.");
-      }
-
-      await markRegistrationCheckedIn({
-        registrationId: registration.id,
-        eventId: organizerEvent.id,
-        organizerId: user.uid,
-      });
+      const registrationId = parseQrPayload(scanResult.text);
+      const registration = await fetchRegistration(registrationId);
+      await markCheckIn(registration);
+      setScanned(true);
       setFeedback(`${registration.name} checked in successfully.`);
     } catch (scanError) {
       console.error("[CollegeEvent] Failed to process QR scan.", {
@@ -338,6 +454,12 @@ export default function CollegeEvent({ createMode = false }) {
       });
       setError(scanError.message || "Unable to process QR code.");
     }
+  };
+
+  const handleScanAgain = () => {
+    setScanned(false);
+    setError("");
+    setFeedback("");
   };
 
   const attendeeRegistrations = myRegistrations.filter((item) =>
@@ -407,6 +529,46 @@ export default function CollegeEvent({ createMode = false }) {
                   onChange={handleEventChange}
                   required
                 />
+                <div className="section" style={{ gap: "12px" }}>
+                  <label className="meta-label" htmlFor="event-picture">
+                    Event Picture
+                  </label>
+                  <input
+                    id="event-picture"
+                    className="input"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    disabled={loading || !isFirebaseConfigured}
+                  />
+                  {eventForm.imageUrl ? (
+                    <div className="soft-panel">
+                      <div className="event-card__image-frame">
+                        <img
+                          src={eventForm.imageUrl}
+                          alt="Event preview"
+                          className="event-card__image"
+                        />
+                      </div>
+                      <div className="list-card__row">
+                        <p className="helper-text">
+                          {eventForm.imageName || "Selected event picture"}
+                        </p>
+                        <button
+                          type="button"
+                          className="button button--secondary"
+                          onClick={handleRemoveImage}
+                        >
+                          Remove Picture
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="helper-text">
+                      Add an optional picture to make the event card more visual.
+                    </p>
+                  )}
+                </div>
                 <Suspense
                   fallback={
                     <div className="card empty-state">
@@ -439,21 +601,38 @@ export default function CollegeEvent({ createMode = false }) {
                   <p className="card-kicker">QR Entry System</p>
                   <h2 className="section-heading">Live Check-In Scanner</h2>
                 </div>
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  onClick={() => setScannerEnabled((current) => !current)}
-                  disabled={!isFirebaseConfigured}
-                >
-                  {scannerEnabled ? "Stop Scanner" : "Start Scanner"}
-                </button>
+                <div className="filter-bar">
+                  {scannerEnabled && scanned ? (
+                    <button
+                      type="button"
+                      className="button button--primary"
+                      onClick={handleScanAgain}
+                      disabled={!isFirebaseConfigured}
+                    >
+                      Scan Again
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => {
+                      setScannerEnabled((current) => !current);
+                      setScanned(false);
+                      setError("");
+                      setFeedback("");
+                    }}
+                    disabled={!isFirebaseConfigured}
+                  >
+                    {scannerEnabled ? "Stop Scanner" : "Start Scanner"}
+                  </button>
+                </div>
               </div>
               <p className="helper-text">
-                Each QR payload carries a registration ID. Firestore transactions prevent
-                duplicate check-ins automatically.
+                Each QR code contains only the registration ID. The scanner fetches the
+                Firestore registration, validates it, and records the check-in.
               </p>
               {scannerEnabled ? (
-                <QrScanner onResult={handleScan} />
+                <QrScanner onResult={handleScan} paused={scanned} />
               ) : (
                 <div className="card empty-state">
                   <p className="empty-state__title">Scanner is paused.</p>
@@ -480,6 +659,10 @@ export default function CollegeEvent({ createMode = false }) {
                       event={event}
                       onViewMap={() => openEventMap(event)}
                       mapDisabled={!hasCoordinates(event)}
+                      secondaryActionLabel="Delete Event"
+                      onSecondaryAction={() => handleDeleteEvent(event)}
+                      secondaryActionDisabled={loading || !isFirebaseConfigured}
+                      secondaryActionTone="danger"
                       footer={
                         <div className="stat-grid">
                           <div className="stat-block">

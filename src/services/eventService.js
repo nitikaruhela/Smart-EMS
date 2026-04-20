@@ -7,10 +7,10 @@ import {
   onSnapshot,
   orderBy,
   query,
-  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "./firebase";
 import { normalizeUserRole } from "../utils/userRole";
@@ -88,6 +88,7 @@ function normalizeEventPayload(payload) {
     organizerId: payload.organizerId?.trim() || "",
     organizerEmail: payload.organizerEmail?.trim() || "",
     organizerRole: normalizeUserRole(payload.organizerRole, "Organizer"),
+    imageUrl: payload.imageUrl || "",
   };
 }
 
@@ -283,6 +284,52 @@ export async function createEvent(payload) {
   }
 }
 
+export async function deleteEvent({ eventId, organizerId }) {
+  if (!isFirebaseConfigured) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  if (!eventId) {
+    throw new Error("Event ID is missing.");
+  }
+
+  if (!organizerId) {
+    throw new Error("Organizer details are missing.");
+  }
+
+  try {
+    const eventRef = doc(db, "events", eventId);
+    const eventSnapshot = await getDoc(eventRef);
+
+    if (!eventSnapshot.exists()) {
+      throw new Error("Event not found.");
+    }
+
+    const eventData = eventSnapshot.data();
+
+    if (eventData.organizerId !== organizerId) {
+      throw new Error("You can only delete your own events.");
+    }
+
+    const registrationsQuery = query(
+      collection(db, "registrations"),
+      where("eventId", "==", eventId)
+    );
+    const registrationsSnapshot = await getDocs(registrationsQuery);
+    const batch = writeBatch(db);
+
+    registrationsSnapshot.forEach((registrationDoc) => {
+      batch.delete(registrationDoc.ref);
+    });
+    batch.delete(eventRef);
+
+    await batch.commit();
+  } catch (error) {
+    logFirestoreError("deleteEvent", error, { eventId, organizerId });
+    throw createFriendlyFirestoreError(error, "Unable to delete the event.");
+  }
+}
+
 export async function registerForEvent(payload) {
   if (!isFirebaseConfigured) {
     throw new Error("Firebase is not configured.");
@@ -329,37 +376,40 @@ export async function markRegistrationCheckedIn(payload) {
   const registrationRef = doc(db, "registrations", normalizedPayload.registrationId);
 
   try {
-    return await runTransaction(db, async (transaction) => {
-      const registrationSnapshot = await transaction.get(registrationRef);
+    const registrationSnapshot = await getDoc(registrationRef);
 
-      if (!registrationSnapshot.exists()) {
-        throw new Error("Registration not found.");
-      }
+    if (!registrationSnapshot.exists()) {
+      throw new Error("Invalid QR Code");
+    }
 
-      const registration = registrationSnapshot.data();
+    const registration = registrationSnapshot.data();
 
-      if (registration.eventId !== normalizedPayload.eventId) {
-        throw new Error("Scanned registration does not belong to this event.");
-      }
+    if (!registration.eventId) {
+      throw new Error("Registration is missing its event details.");
+    }
 
-      if (
-        registration.organizerId &&
-        registration.organizerId !== normalizedPayload.organizerId
-      ) {
-        throw new Error("You can only check in registrations for your own event.");
-      }
+    if (registration.eventId !== normalizedPayload.eventId) {
+      throw new Error("Scanned registration does not belong to this event.");
+    }
 
-      // Transactions ensure two scanners cannot check in the same attendee twice.
-      if (registration.checkedIn) {
-        throw new Error("This attendee has already checked in.");
-      }
+    if (
+      registration.organizerId &&
+      registration.organizerId !== normalizedPayload.organizerId
+    ) {
+      throw new Error("You can only check in registrations for your own event.");
+    }
 
-      transaction.update(registrationRef, {
-        checkedIn: true,
-      });
+    if (registration.checkedIn) {
+      throw new Error("Already checked in");
+    }
 
-      return { id: registrationSnapshot.id, ...registration, checkedIn: true };
+    await updateDoc(registrationRef, {
+      checkedIn: true,
+      checkedInAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
+
+    return { id: registrationSnapshot.id, ...registration, checkedIn: true };
   } catch (error) {
     logFirestoreError("markRegistrationCheckedIn", error, normalizedPayload);
     throw createFriendlyFirestoreError(error, "Unable to check in this registration.");
